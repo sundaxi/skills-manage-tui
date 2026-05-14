@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -65,6 +66,9 @@ type AppModel struct {
 	settingsCursor  int
 	settingsEditing bool
 	settingsInput   textinput.Model
+
+	lastClickTime time.Time
+	lastClickRow  int
 
 	err error
 }
@@ -145,7 +149,18 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				idx := msg.Y - skillsStartY
 				filtered := m.filteredSkills()
 				if idx >= 0 && idx < len(filtered) {
-					m.cursor = idx
+					now := time.Now()
+					if idx == m.lastClickRow && now.Sub(m.lastClickTime) < 400*time.Millisecond {
+						// Double-click: toggle selection
+						name := filtered[idx].Name
+						m.selected[name] = !m.selected[name]
+						m.lastClickTime = time.Time{}
+					} else {
+						// Single click: move cursor
+						m.cursor = idx
+						m.lastClickTime = now
+						m.lastClickRow = idx
+					}
 				}
 			}
 		}
