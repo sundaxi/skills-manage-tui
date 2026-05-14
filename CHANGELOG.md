@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-07-17
+
+### Added
+
+- **平台安装矩阵** — Skills 列表内置每平台 ✓/· 安装状态列，可直观看到每个 skill 的覆盖情况
+- **交互式 Settings Tab** — 可实时切换主题 (mocha/latte)、强调色 (10 种 Catppuccin 色)、编辑技能库路径
+- **强调色系统** — 新增 `accent_color` 配置项，支持 rosewater, flamingo, pink, mauve, red, maroon, peach, yellow, green, teal
+- **鼠标支持** — 单击 Tab 栏切换页面，单击技能行移动光标，双击技能行切换选中
+- **数字键快捷键** — `1`-`4` 直接跳转到对应 Tab
+
+### Changed
+
+- Tab 结构调整为 4 个: Skills / Marketplace / Collections / Settings (移除 Discover Tab)
+- Mocha 主题色彩优化: 提高弱化文字对比度 (Overlay0 → Subtext0)，改善可读性
+- Skills 列表增加 checkbox 与名称间距
+- 项目重命名: skill-cli → skill-tui
+
+### Removed
+
+- 独立 Status Tab (功能已合并到 Skills 列表的平台矩阵)
+- 独立 Discover Tab (功能可通过 CLI 命令 `skill-tui discover` 使用)
+
 ## [0.1.0] - 2026-05-13
 
 ### Added

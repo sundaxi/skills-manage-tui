@@ -138,13 +138,16 @@ defaults.go     loadDefaultPlatforms() — 从 configs/platforms.yaml 加载
 
 ```
 app.go          AppModel — bubbletea 主模型
-                5 Tab 页路由 (Skills/Marketplace/Collections/Discover/Settings)
+                4 Tab 页路由 (Skills/Marketplace/Collections/Settings)
                 3 视图状态 (List/Detail/PlatformSelect)
                 全局快捷键处理
                 搜索过滤逻辑
+                鼠标事件处理 (单击/双击)
 
 styles/theme.go Theme struct — Catppuccin Mocha/Latte 调色板
                 NewTheme() — 按名称创建主题
+                NewThemeWithAccent() — 创建带自定义强调色的主题
+                AccentColors — 10 种可选强调色
                 28 种颜色 + 16 种预定义样式
 
 components/     multiselect.go — 通用多选组件 (Space/a/j/k)
@@ -172,6 +175,12 @@ components/     multiselect.go — 通用多选组件 (Space/a/j/k)
           └──│ viewPlatformSelect │──────────┘
              │  (平台选择)          │
              └────────────────────┘
+
+Settings Tab:
+  ↑/↓ 移动光标 → Enter 切换主题/强调色 / 编辑路径
+  主题: mocha ↔ latte (实时切换)
+  强调色: 10 种 Catppuccin 色循环
+  路径: 文本输入编辑, Enter 确认
 ```
 
 ### internal/github/ — GitHub 集成
@@ -295,9 +304,11 @@ bubbletea Program
   │
   ├─ Update(msg)
   │    ├─ WindowSizeMsg → 记录 width/height
+  │    ├─ MouseMsg → Tab 栏点击 / 技能行单击 / 双击选中
   │    ├─ KeyMsg (search active) → search.Update + filterSkills
   │    ├─ KeyMsg (viewPlatformSelect) → multiSel.Update
   │    ├─ KeyMsg (viewDetail) → handleDetail
+  │    ├─ KeyMsg (settings) → handleSettings (主题/强调色切换, 路径编辑)
   │    └─ KeyMsg (viewList) → navigate/select/enter/search
   │
   └─ View() → renderTabBar + renderContent + renderStatusBar
