@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -248,6 +250,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.removeSelected()
 		case "r":
 			m.loadSkills()
+		case "o":
+			filtered := m.filteredSkills()
+			if m.cursor >= 0 && m.cursor < len(filtered) {
+				dir := filtered[m.cursor].Path
+				opener := "open"
+				if runtime.GOOS == "linux" {
+					opener = "xdg-open"
+				}
+				exec.Command(opener, dir).Start()
+			}
 		}
 	}
 
@@ -416,7 +428,7 @@ func (m AppModel) renderSkillList() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(m.theme.Dimmed.Render("  ↑/k↓/j: navigate  Space: select  a: all  Enter/d: detail  p: install  x: remove  /: search  r: refresh"))
+	b.WriteString(m.theme.Dimmed.Render("  ↑/k↓/j: navigate  Space: select  a: all  Enter/d: detail  o: open  p: install  x: remove  /: search  r: refresh"))
 
 	return b.String()
 }
