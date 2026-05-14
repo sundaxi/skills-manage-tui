@@ -148,9 +148,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Skill list click
 			if m.activeTab == tabSkills && m.currentView == viewList {
 				const skillsStartY = 6
-				idx := msg.Y - skillsStartY
+				visIdx := msg.Y - skillsStartY
+				idx := visIdx + m.scroll
 				filtered := m.filteredSkills()
-				if idx >= 0 && idx < len(filtered) {
+				if visIdx >= 0 && idx >= 0 && idx < len(filtered) {
 					now := time.Now()
 					if idx == m.lastClickRow && now.Sub(m.lastClickTime) < 400*time.Millisecond {
 						// Double-click: toggle selection
@@ -216,13 +217,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.search.Focus()
 			return m, nil
 		case "up", "k":
+			filtered := m.filteredSkills()
 			if m.cursor > 0 {
 				m.cursor--
 			}
+			m.adjustScroll(filtered)
 		case "down", "j":
-			if m.cursor < len(m.skills)-1 {
+			filtered := m.filteredSkills()
+			if m.cursor < len(filtered)-1 {
 				m.cursor++
 			}
+			m.adjustScroll(filtered)
 		case " ":
 			if len(m.skills) > 0 {
 				name := m.skills[m.cursor].Name
@@ -378,8 +383,15 @@ func (m AppModel) renderSkillList() string {
 	b.WriteString(m.theme.Dimmed.Render("  " + strings.Repeat("─", sepLen-2)))
 	b.WriteString("\n")
 
-	// Skill rows
-	for i, s := range filtered {
+	// Skill rows (windowed by scroll)
+	visible := m.visibleSkillRows()
+	start := m.scroll
+	end := start + visible
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	for i := start; i < end; i++ {
+		s := filtered[i]
 		cursor := " "
 		if i == m.cursor {
 			cursor = m.theme.Cursor.Render(">")
@@ -427,7 +439,13 @@ func (m AppModel) renderSkillList() string {
 		b.WriteString(fmt.Sprintf(" %s %s %s%s %s\n", cursor, check, nameStyled, cols.String(), desc))
 	}
 
-	b.WriteString("\n")
+	// Scroll indicator
+	if len(filtered) > visible {
+		b.WriteString(m.theme.Dimmed.Render(fmt.Sprintf("  ─── %d-%d / %d ───", start+1, end, len(filtered))))
+		b.WriteString("\n")
+	} else {
+		b.WriteString("\n")
+	}
 	b.WriteString(m.theme.Dimmed.Render("  ↑/k↓/j: navigate  Space: select  a: all  Enter/d: detail  o: open  p: install  x: remove  /: search  r: refresh"))
 
 	return b.String()
@@ -684,10 +702,12 @@ func (m *AppModel) loadSkills() {
 	m.skills = skills
 	m.selected = make(map[string]bool)
 	m.cursor = 0
+	m.scroll = 0
 }
 
 func (m *AppModel) filterSkills() {
 	m.cursor = 0
+	m.scroll = 0
 }
 
 func (m AppModel) filteredSkills() []skill.Skill {
@@ -705,6 +725,34 @@ func (m AppModel) filteredSkills() []skill.Skill {
 		}
 	}
 	return filtered
+}
+
+// visibleSkillRows returns how many skill rows fit in the viewport.
+// Layout: TabBar(1) + Title+Search(1) + blank(1) + header(1) + separator(1) + helpbar(2) + statusbar(1) = 8 overhead
+func (m AppModel) visibleSkillRows() int {
+	overhead := 8
+	rows := m.height - overhead
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
+}
+
+func (m *AppModel) adjustScroll(filtered []skill.Skill) {
+	visible := m.visibleSkillRows()
+	if m.cursor < m.scroll {
+		m.scroll = m.cursor
+	}
+	if m.cursor >= m.scroll+visible {
+		m.scroll = m.cursor - visible + 1
+	}
+	maxScroll := len(filtered) - visible
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.scroll > maxScroll {
+		m.scroll = maxScroll
+	}
 }
 
 func (m *AppModel) showPlatformSelect() {
