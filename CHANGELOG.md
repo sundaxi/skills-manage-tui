@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **交互式 Settings Tab** — 可实时切换主题 (mocha/latte)、强调色 (10 种 Catppuccin 色)、编辑技能库路径
 - **强调色系统** — 新增 `accent_color` 配置项，支持 rosewater, flamingo, pink, mauve, red, maroon, peach, yellow, green, teal
 - **鼠标支持** — 单击 Tab 栏切换页面，单击技能行移动光标，双击技能行切换选中
+- **快捷键 `o`** — 在 Finder (macOS) 或文件管理器 (Linux) 中打开当前技能目录
+- **滚动翻页** — 技能列表超出屏幕时自动翻页，显示位置指示器 (如 `1-15 / 30`)
 - **数字键快捷键** — `1`-`4` 直接跳转到对应 Tab
 
 ### Changed
