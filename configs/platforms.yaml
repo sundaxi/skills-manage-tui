@@ -1,0 +1,115 @@
+# Platform definitions for skill-tui
+# Each platform has a name, category, and the path to its skills directory.
+
+platforms:
+  - name: claude-code
+    category: coding
+    skills_dir: ~/.claude/skills/
+
+  - name: codex-cli
+    category: coding
+    skills_dir: ~/.agents/skills/
+
+  - name: cursor
+    category: coding
+    skills_dir: ~/.cursor/skills/
+
+  - name: gemini-cli
+    category: coding
+    skills_dir: ~/.gemini/skills/
+
+  - name: trae
+    category: coding
+    skills_dir: ~/.trae/skills/
+
+  - name: factory-droid
+    category: coding
+    skills_dir: ~/.factory/skills/
+
+  - name: junie
+    category: coding
+    skills_dir: ~/.junie/skills/
+
+  - name: qwen
+    category: coding
+    skills_dir: ~/.qwen/skills/
+
+  - name: trae-cn
+    category: coding
+    skills_dir: ~/.trae-cn/skills/
+
+  - name: windsurf
+    category: coding
+    skills_dir: ~/.windsurf/skills/
+
+  - name: qoder
+    category: coding
+    skills_dir: ~/.qoder/skills/
+
+  - name: augment
+    category: coding
+    skills_dir: ~/.augment/skills/
+
+  - name: opencode
+    category: coding
+    skills_dir: ~/.opencode/skills/
+
+  - name: kilocode
+    category: coding
+    skills_dir: ~/.kilocode/skills/
+
+  - name: ob1
+    category: coding
+    skills_dir: ~/.ob1/skills/
+
+  - name: amp
+    category: coding
+    skills_dir: ~/.amp/skills/
+
+  - name: kiro
+    category: coding
+    skills_dir: ~/.kiro/skills/
+
+  - name: codebuddy
+    category: coding
+    skills_dir: ~/.codebuddy/skills/
+
+  - name: hermes
+    category: coding
+    skills_dir: ~/.hermes/skills/
+
+  - name: copilot
+    category: coding
+    skills_dir: ~/.copilot/skills/
+
+  - name: aider
+    category: coding
+    skills_dir: ~/.aider/skills/
+
+  - name: openclaw
+    category: lobster
+    skills_dir: ~/.openclaw/skills/
+
+  - name: qclaw
+    category: lobster
+    skills_dir: ~/.qclaw/skills/
+
+  - name: easyclaw
+    category: lobster
+    skills_dir: ~/.easyclaw/skills/
+
+  - name: easyclaw-v2
+    category: lobster
+    skills_dir: ~/.easyclaw-20260322-01/skills/
+
+  - name: autoclaw
+    category: lobster
+    skills_dir: ~/.openclaw-autoclaw/skills/
+
+  - name: workbuddy
+    category: lobster
+    skills_dir: ~/.workbuddy/skills-marketplace/skills/
+
+  - name: central
+    category: central
+    skills_dir: /Users/ying.sun1/Gargantua/70-Tooling/74-Agents/_Shared/Skills

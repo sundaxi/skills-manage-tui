@@ -1,0 +1,55 @@
+{
+  "updated_at": "2026-05-13",
+  "publishers": [
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "description": "Official Anthropic skills and best practices",
+      "repo_url": "https://github.com/anthropics/skills"
+    },
+    {
+      "id": "ecc",
+      "name": "Everything Claude Code",
+      "description": "Community skills for Claude Code power users",
+      "repo_url": "https://github.com/ecc-skills/registry"
+    },
+    {
+      "id": "community",
+      "name": "Community",
+      "description": "Community-contributed skills for various platforms",
+      "repo_url": "https://github.com/skills-community/registry"
+    }
+  ],
+  "skills": [
+    {
+      "name": "graphify",
+      "publisher_id": "ecc",
+      "description": "Convert any input to knowledge graph format",
+      "version": "1.0.0",
+      "author": "ECC",
+      "tags": ["knowledge", "graph", "mcp"],
+      "path": "skills/graphify",
+      "repo_url": "https://github.com/ecc-skills/graphify"
+    },
+    {
+      "name": "code-review",
+      "publisher_id": "ecc",
+      "description": "Automated code review with security analysis",
+      "version": "2.1.0",
+      "author": "ECC",
+      "tags": ["review", "security", "quality"],
+      "path": "skills/code-review",
+      "repo_url": "https://github.com/ecc-skills/code-review"
+    },
+    {
+      "name": "tdd-guide",
+      "publisher_id": "ecc",
+      "description": "Test-driven development workflow enforcement",
+      "version": "1.5.0",
+      "author": "ECC",
+      "tags": ["testing", "tdd", "workflow"],
+      "path": "skills/tdd-guide",
+      "repo_url": "https://github.com/ecc-skills/tdd-guide"
+    }
+  ]
+}
