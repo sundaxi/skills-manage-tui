@@ -1,244 +1,193 @@
-# skill-tui
+# skills-manage-tui
 
-> 一个用于统一管理多平台 AI 编程 Agent Skills 的命令行工具
->
 > A CLI tool for managing AI coding agent skills across multiple platforms
+>
+> [中文文档](README_zh.md)
 
-## 功能概览
+> **Note:** The author is lazy. This project is unlikely to receive further updates. Feel free to fork and carry it forward.
 
-- **中央技能库** — 使用 `~/.agents/skills/` 作为单一事实来源，通过符号链接分发到各平台
-- **28+ 平台支持** — Claude Code、Cursor、Gemini CLI、Copilot、Windsurf、Aider 等
-- **交互式 TUI** — 多选列表、实时搜索、Markdown 详情、Catppuccin 主题、鼠标点击/双击
-- **平台矩阵** — Skills 列表内置各平台安装状态矩阵 (✓/·)
-- **Marketplace** — 浏览和安装社区发布的 Skills
-- **GitHub 导入** — 从任意 GitHub 仓库导入 Skills
-- **技能集合** — 批量安装和分组管理
-- **AI 解释** — 调用 LLM 自动解释 Skill 内容
-- **本地发现** — 扫描项目目录发现已安装的 Skills
-- **中英双语** — 自动检测系统语言
+## Development Status
 
-## 快速开始
+| Feature | Status |
+|---------|--------|
+| Skill management (list / install / sync / remove) | **Available** |
+| Interactive TUI | **Available** |
+| Multi-platform symlink | **Available** |
+| Marketplace | Coming soon |
+| Collection | Coming soon |
+| GitHub import | Coming soon |
+| AI explain | Coming soon |
+| Local discover | Coming soon |
 
-### 安装
+## Features
+
+- **Central skill registry** — `~/.agents/skills/` as single source of truth, distributed via symlinks
+- **28+ platforms** — Claude Code, Cursor, Gemini CLI, Copilot, Windsurf, Aider, etc.
+- **Interactive TUI** — Multi-select, real-time search, Markdown detail view, Catppuccin theme, mouse support
+- **Platform matrix** — Per-skill install status across all platforms (checkmark / dot)
+- **Auto scroll/pagination** — Automatic scrolling when skills exceed screen height
+- **Bilingual** — Auto-detects system language (Chinese / English)
+
+## Quick Start
+
+### Install
 
 ```bash
-# 从源码构建
-git clone https://github.com/ying-sun1/skill-tui.git
-cd skill-tui
-make install
-
-# 或直接构建
+git clone https://github.com/sundaxi/skills-manage-tui.git
+cd skills-manage-tui
 make build
-./skill-tui --help
 ```
 
-### 前置依赖
+### Prerequisites
 
 - Go 1.22+
 
-### 30 秒上手
+### 30-Second Tour
 
 ```bash
-# 进入交互式 TUI
+# Launch interactive TUI
 skill-tui
 
-# 或使用命令模式
-skill-tui list                          # 列出所有 skills
-skill-tui list --verbose                # 详细信息（含已安装平台）
-skill-tui list --platform claude-code   # 查看特定平台的 skills
+# Or use CLI mode
+skill-tui list                          # List all skills
+skill-tui list --verbose                # Verbose (with platform install info)
+skill-tui list --platform claude-code   # Filter by platform
 
-skill-tui install my-skill              # 安装到所有已检测平台
-skill-tui install my-skill -p cursor    # 安装到指定平台
+skill-tui install my-skill              # Choose target platforms
+skill-tui install my-skill --all        # Install to all detected platforms
+skill-tui install my-skill -p cursor    # Install to specific platform
 
-skill-tui sync                          # 同步所有平台
-skill-tui sync --dry-run                # 预览变更
+skill-tui sync                          # Sync all platforms
+skill-tui sync --dry-run                # Preview changes
 
-skill-tui remove my-skill               # 从所有平台移除
-skill-tui remove my-skill --purge       # 同时从中央库删除
+skill-tui remove my-skill               # Remove from all platforms
+skill-tui remove my-skill --purge       # Also delete from central registry
 ```
 
-## 命令参考
+## Command Reference
 
-### `skill-tui` (交互模式)
+### `skill-tui` (Interactive Mode)
 
-不带参数运行进入 TUI 界面：
+Launches the TUI with four tabs:
 
 ```
  1 Skills   2 Marketplace   3 Collections   4 Settings
 ```
 
-| 快捷键 | 功能 |
-|--------|------|
-| `↑`/`k` `↓`/`j` | 上下导航 |
-| `Space` | 选择/取消当前项 |
-| `a` | 全选/取消全选 |
-| `Enter` / `d` | 查看详情 |
-| `o` | 在 Finder 中打开技能目录 |
-| `p` | 批量安装到选定平台 |
-| `x` | 移除选中项 |
-| `/` | 搜索 |
-| `r` | 刷新 |
-| `i` | 在详情页安装到所有平台 |
-| `u` | 在详情页卸载 |
-| `Esc` | 返回上级 |
-| `Tab` | 切换 Tab 页 |
-| `1`-`4` | 直接跳转到指定 Tab |
-| `q` | 退出 |
+**Keyboard shortcuts (Skills tab):**
 
-**鼠标支持：**
+| Key | Action |
+|-----|--------|
+| Up/k  Down/j | Navigate |
+| Space | Toggle selection |
+| a | Select / deselect all |
+| Enter / d | View detail |
+| o | Open skill directory in Finder |
+| p | Install selected to chosen platforms |
+| x | Remove selected |
+| / | Search |
+| r | Refresh |
+| i | Install (in detail view) |
+| u | Uninstall (in detail view) |
+| Esc | Go back |
+| Tab | Switch tab |
+| 1-4 | Jump to tab |
+| q | Quit |
 
-| 操作 | 功能 |
-|------|------|
-| 单击 Tab 栏 | 切换到对应 Tab |
-| 单击技能行 | 移动光标到该行 |
-| 双击技能行 | 切换选中状态 |
+**Mouse support:**
 
-**Skills Tab 平台矩阵：**
+| Action | Effect |
+|--------|--------|
+| Click tab bar | Switch to that tab |
+| Click skill row | Move cursor to that row |
+| Double-click skill row | Toggle selection |
 
-Skills 列表内置每平台安装状态矩阵，以 `✓`/`·` 标记各技能在各平台的安装状态：
+**Platform matrix in Skills tab:**
+
+Each skill row shows install status across platforms:
 
 ```
                          claude  codex   copilot hermes
-───────────────────────────────────────────────────────
+──────────────────────────────────────────────────────────
 ○ ai-digest               ✓       ✓       ✓       ✓
 ○ mermaid-visualizer      ✓       ·       ✓       ✓
 ```
 
-**自动翻页：**
+**Auto pagination:**
 
-当技能数量超出屏幕高度时，列表自动支持滚动翻页。光标移动到边界时视窗自动跟随，底部显示位置指示器（如 `─── 1-15 / 30 ───`）。
+When the skill list exceeds screen height, scrolling activates automatically with a position indicator at the bottom (e.g. `─── 1-15 / 30 ───`).
 
 ### `skill-tui list`
 
-列出中央技能库中的所有 Skills。
-
 ```bash
-skill-tui list                          # 基础列表
-skill-tui list -v                       # 详细模式（显示作者、已安装平台数）
-skill-tui list -p claude-code           # 仅显示某平台已安装的 skills
+skill-tui list                          # Basic list
+skill-tui list -v                       # Verbose (author, platform count)
+skill-tui list -p claude-code           # Filter by platform
 ```
 
 ### `skill-tui install`
 
-将 Skill 安装到一个或多个平台。通过创建符号链接实现。
+Install a skill to one or more platforms via symlink creation.
 
 ```bash
-skill-tui install my-skill              # 显示可用平台列表
-skill-tui install my-skill --all        # 安装到所有已检测平台
-skill-tui install my-skill -p cursor    # 安装到指定平台
+skill-tui install my-skill              # Choose target platforms
+skill-tui install my-skill --all        # All detected platforms
+skill-tui install my-skill -p cursor    # Specific platform
 ```
 
 ### `skill-tui sync`
 
-同步中央技能库和各平台的符号链接。
+Sync the central registry with all platform symlinks.
 
 ```bash
-skill-tui sync                          # 同步所有平台
-skill-tui sync -p claude-code           # 仅同步指定平台
-skill-tui sync --dry-run                # 预览模式（不执行变更）
+skill-tui sync                          # Sync all platforms
+skill-tui sync -p claude-code           # Specific platform
+skill-tui sync --dry-run                # Preview only
 ```
 
-自动修复：
-- 创建缺失的符号链接
-- 修复断裂的链接（指向已删除的 skill）
-- 清理指向已移除 skill 的过期链接
+Auto-fixes:
+- Creates missing symlinks
+- Repairs broken links (pointing to deleted skills)
+- Cleans up stale links
 
 ### `skill-tui remove`
 
-从平台移除 Skill（删除符号链接）。
+Remove a skill from platforms (deletes symlinks).
 
 ```bash
-skill-tui remove my-skill               # 从所有平台移除（需确认）
-skill-tui remove my-skill -p cursor     # 从指定平台移除
-skill-tui remove my-skill --purge       # 同时从中央库删除
-skill-tui remove my-skill --force       # 跳过确认提示
-```
-
-### `skill-tui marketplace`
-
-浏览和安装市场中的 Skills。
-
-```bash
-skill-tui marketplace browse            # 浏览发布者
-skill-tui marketplace search react      # 搜索 Skills
-skill-tui marketplace install graphify  # 安装一个 Skill
-```
-
-### `skill-tui import`
-
-从 GitHub 仓库导入 Skills。
-
-```bash
-skill-tui import https://github.com/user/skills-repo
-skill-tui import https://github.com/user/repo --path skills/my-skill
-```
-
-自动扫描仓库中的 `SKILL.md` 文件并导入到中央技能库。
-
-### `skill-tui collection`
-
-管理技能集合（批量操作）。
-
-```bash
-skill-tui collection create my-set -d "My常用集合" --skills skill1,skill2
-skill-tui collection list
-skill-tui collection add my-set new-skill
-skill-tui collection remove my-set old-skill
-skill-tui collection install my-set        # 批量安装
-skill-tui collection delete my-set
-```
-
-### `skill-tui discover`
-
-扫描本地目录发现项目级 Skills。
-
-```bash
-skill-tui discover                       # 扫描当前目录
-skill-tui discover /path/to/project      # 扫描指定目录
-skill-tui discover -r                    # 递归扫描子目录
+skill-tui remove my-skill               # From all platforms (confirm)
+skill-tui remove my-skill -p cursor     # From specific platform
+skill-tui remove my-skill --purge       # Also delete from central registry
+skill-tui remove my-skill --force       # Skip confirmation
 ```
 
 ### `skill-tui config`
 
-查看和修改配置。
+View and modify configuration.
 
 ```bash
-skill-tui config get                     # 查看所有配置
-skill-tui config get theme               # 查看单项
-skill-tui config set theme latte         # 切换主题
-skill-tui config set github_token ghp_xxx
-skill-tui config set ai_provider anthropic
-skill-tui config set ai_key sk-ant-xxx
-skill-tui config platforms               # 列出所有已知平台及检测状态
+skill-tui config get                    # Show all config
+skill-tui config get theme              # Show single value
+skill-tui config set theme latte        # Switch theme
+skill-tui config platforms              # List all known platforms
 ```
 
-## 配置
+## Configuration
 
-配置文件位于 `~/.skill-tui/config.yaml`，支持环境变量覆盖（`SKILL_CLI_` 前缀）。
+Config file: `~/.skill-tui/config.yaml`. Environment variables override with `SKILL_CLI_` prefix.
 
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `skills_path` | `~/.agents/skills/` | 中央技能库路径 |
-| `theme` | `mocha` | TUI 主题 (`mocha` / `latte`) |
-| `accent_color` | `mauve` | 强调色 (10 种 Catppuccin 色: rosewater, flamingo, pink, mauve, red, maroon, peach, yellow, green, teal) |
-| `language` | `auto` | 语言 (`auto` / `zh` / `en`) |
-| `github_token` | (空) | GitHub API Token（提高 rate limit） |
-| `ai_provider` | (空) | AI 提供商 (`openai` / `anthropic`) |
-| `ai_key` | (空) | AI API Key |
-| `ai_endpoint` | (空) | 自定义 AI Endpoint |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `skills_path` | `~/.agents/skills/` | Central skill registry path |
+| `theme` | `mocha` | TUI theme (`mocha` / `latte`) |
+| `accent_color` | `mauve` | 10 Catppuccin accent colors |
+| `language` | `auto` | Language (`auto` / `zh` / `en`) |
+| `github_token` | (empty) | GitHub API token (higher rate limit) |
 
-### 环境变量
+## Supported Platforms
 
-```bash
-export SKILL_CLI_SKILLS_PATH=/custom/skills/path
-export SKILL_CLI_GITHUB_TOKEN=ghp_xxx
-export SKILL_CLI_AI_KEY=sk-ant-xxx
-```
-
-## 支持的平台
-
-| 类别 | 平台 | Skills 目录 |
-|------|------|------------|
+| Category | Platform | Skills Directory |
+|----------|----------|-----------------|
 | Coding | Claude Code | `~/.claude/skills/` |
 | Coding | Codex CLI | `~/.agents/skills/` |
 | Coding | Cursor | `~/.cursor/skills/` |
@@ -259,14 +208,13 @@ export SKILL_CLI_AI_KEY=sk-ant-xxx
 | Lobster | QClaw | `~/.qclaw/skills/` |
 | Lobster | EasyClaw | `~/.easyclaw/skills/` |
 | Lobster | WorkBuddy | `~/.workbuddy/skills-marketplace/skills/` |
-| Central | 中央技能库 | (configurable) |
 
-可在 Settings 界面或通过修改 `configs/platforms.yaml` 添加自定义平台。
+Custom platforms can be added via Settings or by editing `configs/platforms.yaml`.
 
-## 工作原理
+## How It Works
 
 ```
-中央技能库                          各平台 Skills 目录
+Central Registry                    Platform Skills Directories
 ~/.agents/skills/                   ~/.claude/skills/
 ├── skill-a/                        ├── skill-a → ~/.agents/skills/skill-a
 │   └── SKILL.md                    └── skill-b → ~/.agents/skills/skill-b
@@ -276,37 +224,36 @@ export SKILL_CLI_AI_KEY=sk-ant-xxx
                               └── skill-b → ~/.agents/skills/skill-b
 ```
 
-1. Skill 存放在中央技能库（默认 `~/.agents/skills/`）
-2. 通过符号链接安装到各平台的 skills 目录
-3. 同一份 Skill 是所有平台的单一事实来源
-4. 修改中央库的 Skill 即时反映到所有平台
+1. Skills live in the central registry (default `~/.agents/skills/`)
+2. Installing creates a symlink in the platform's skills directory
+3. One source file is shared across all platforms
+4. Editing the central copy is instantly reflected everywhere
 
-## 技术栈
+## Tech Stack
 
-| 层 | 技术 |
-|---|---|
-| 语言 | Go 1.22+ |
-| CLI 框架 | cobra |
-| TUI 框架 | bubbletea + lipgloss + huh + bubbles |
-| Markdown 渲染 | glamour |
-| 配置管理 | viper |
-| HTTP 客户端 | net/http |
-| 主题 | Catppuccin (Mocha / Latte) |
+| Layer | Technology |
+|-------|-----------|
+| Language | Go 1.22+ |
+| CLI | cobra |
+| TUI | bubbletea + lipgloss + huh + bubbles |
+| Markdown | glamour |
+| Config | viper |
+| Theme | Catppuccin (Mocha / Latte) |
 
-## 开发
+## Development
 
 ```bash
-make build       # 构建
-make test        # 运行测试
-make lint        # 代码检查 + 格式化
-make run         # 构建并运行
-make install     # 安装到 /usr/local/bin
-make clean       # 清理构建产物
+make build       # Build binary
+make test        # Run tests
+make lint        # go vet + gofmt
+make run         # Build and run
+make install     # Install to /usr/local/bin
+make clean       # Remove binary
 ```
 
-## 致谢
+## Acknowledgements
 
-灵感来源 [skills-manage](https://github.com/iamzhihuix/skills-manage) — 基于 Tauri 的桌面版 Skill 管理器。
+Inspired by [skills-manage](https://github.com/iamzhihuix/skills-manage) — a Tauri-based desktop skill manager.
 
 ## License
 
