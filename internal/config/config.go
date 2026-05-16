@@ -70,15 +70,15 @@ func Load() (*Config, error) {
 	skillsPath := v.GetString("skills_path")
 
 	cfg = &Config{
-		SkillsPath:   skillsPath,
-		Theme:        v.GetString("theme"),
-		AccentColor:  v.GetString("accent_color"),
-		Language:     v.GetString("language"),
-		GitHubToken:  v.GetString("github_token"),
-		AIProvider:   v.GetString("ai_provider"),
-		AIKey:        v.GetString("ai_key"),
-		AIEndpoint:   v.GetString("ai_endpoint"),
-		Platforms:    platforms,
+		SkillsPath:  skillsPath,
+		Theme:       v.GetString("theme"),
+		AccentColor: v.GetString("accent_color"),
+		Language:    v.GetString("language"),
+		GitHubToken: v.GetString("github_token"),
+		AIProvider:  v.GetString("ai_provider"),
+		AIKey:       v.GetString("ai_key"),
+		AIEndpoint:  v.GetString("ai_endpoint"),
+		Platforms:   platforms,
 	}
 
 	var customs []Platform

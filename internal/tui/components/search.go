@@ -1,8 +1,8 @@
 package components
 
 import (
-	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbletea"
 	"github.com/ying-sun1/skill-tui/internal/tui/styles"
 )
 

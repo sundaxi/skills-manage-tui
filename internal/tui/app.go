@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ying-sun1/skill-tui/internal/config"
 	"github.com/ying-sun1/skill-tui/internal/platform"
@@ -39,28 +39,28 @@ const (
 )
 
 type AppModel struct {
-	cfg     *config.Config
-	theme   styles.Theme
+	cfg      *config.Config
+	theme    styles.Theme
 	registry *skill.Registry
 
-	tabs       []string
-	activeTab  tab
+	tabs        []string
+	activeTab   tab
 	currentView view
 
-	skills     []skill.Skill
-	selected   map[string]bool
-	cursor     int
-	scroll     int
+	skills   []skill.Skill
+	selected map[string]bool
+	cursor   int
+	scroll   int
 
-	platforms    []platform.Platform
-	platformMap  map[string]string
+	platforms   []platform.Platform
+	platformMap map[string]string
 
-	detailSkill  *skill.Skill
-	fullContent  bool
+	detailSkill *skill.Skill
+	fullContent bool
 
-	search     components.SearchModel
-	statusBar  components.StatusBar
-	multiSel   components.MultiSelectModel
+	search    components.SearchModel
+	statusBar components.StatusBar
+	multiSel  components.MultiSelectModel
 
 	width  int
 	height int
@@ -99,14 +99,14 @@ func NewApp(cfg *config.Config) AppModel {
 	search := components.NewSearch(theme)
 
 	app := AppModel{
-		cfg:      cfg,
-		theme:    theme,
-		registry: registry,
-		tabs:     tabNames,
-		selected: make(map[string]bool),
-		platforms: platforms,
+		cfg:         cfg,
+		theme:       theme,
+		registry:    registry,
+		tabs:        tabNames,
+		selected:    make(map[string]bool),
+		platforms:   platforms,
 		platformMap: platformMap,
-		search:   search,
+		search:      search,
 	}
 	app.loadSkills()
 	return app

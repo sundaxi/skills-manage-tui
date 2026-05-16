@@ -4,7 +4,7 @@ import "github.com/charmbracelet/lipgloss"
 
 var Mocha = struct {
 	Rosewater, Flamingo, Pink, Mauve, Red, Maroon, Peach string
-	Yellow, Green, Teal, Sky, Sapphire, Blue, Lavender  string
+	Yellow, Green, Teal, Sky, Sapphire, Blue, Lavender   string
 	Text, Subtext1, Subtext0                             string
 	Overlay2, Overlay1, Overlay0                         string
 	Surface2, Surface1, Surface0                         string
@@ -21,7 +21,7 @@ var Mocha = struct {
 
 var Latte = struct {
 	Rosewater, Flamingo, Pink, Mauve, Red, Maroon, Peach string
-	Yellow, Green, Teal, Sky, Sapphire, Blue, Lavender  string
+	Yellow, Green, Teal, Sky, Sapphire, Blue, Lavender   string
 	Text, Subtext1, Subtext0                             string
 	Overlay2, Overlay1, Overlay0                         string
 	Surface2, Surface1, Surface0                         string

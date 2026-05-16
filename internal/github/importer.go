@@ -17,8 +17,8 @@ type ImportResult struct {
 }
 
 type Importer struct {
-	client      *Client
-	skillsDir   string
+	client    *Client
+	skillsDir string
 }
 
 func NewImporter(client *Client, skillsDir string) *Importer {

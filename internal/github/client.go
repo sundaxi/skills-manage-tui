@@ -17,9 +17,9 @@ type Client struct {
 }
 
 type RepoInfo struct {
-	Owner    string
-	Name     string
-	FullName string
+	Owner         string
+	Name          string
+	FullName      string
 	DefaultBranch string
 }
 
@@ -41,8 +41,8 @@ type FileContent struct {
 
 func NewClient(token string) *Client {
 	return &Client{
-		token:   token,
-		baseURL: "https://api.github.com",
+		token:      token,
+		baseURL:    "https://api.github.com",
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -67,24 +67,24 @@ func (c *Client) ParseRepoURL(rawURL string) (*RepoInfo, error) {
 	}
 
 	return &RepoInfo{
-		Owner: segments[0],
-		Name:  segments[1],
+		Owner:    segments[0],
+		Name:     segments[1],
 		FullName: segments[0] + "/" + segments[1],
 	}, nil
 }
 
 func (c *Client) GetRepo(ctx context.Context, owner, repo string) (*RepoInfo, error) {
 	var result struct {
-		FullName string `json:"full_name"`
+		FullName      string `json:"full_name"`
 		DefaultBranch string `json:"default_branch"`
 	}
 	if err := c.get(ctx, fmt.Sprintf("/repos/%s/%s", owner, repo), &result); err != nil {
 		return nil, err
 	}
 	return &RepoInfo{
-		Owner:    owner,
-		Name:     repo,
-		FullName: result.FullName,
+		Owner:         owner,
+		Name:          repo,
+		FullName:      result.FullName,
 		DefaultBranch: result.DefaultBranch,
 	}, nil
 }
@@ -122,8 +122,8 @@ func (c *Client) GetFileContent(ctx context.Context, owner, repo, path, ref stri
 
 func (c *Client) ListRepos(ctx context.Context, owner string) ([]RepoInfo, error) {
 	var repos []struct {
-		FullName string `json:"full_name"`
-		Name     string `json:"name"`
+		FullName      string `json:"full_name"`
+		Name          string `json:"name"`
 		DefaultBranch string `json:"default_branch"`
 	}
 	if err := c.get(ctx, fmt.Sprintf("/users/%s/repos?per_page=100", owner), &repos); err != nil {
@@ -133,9 +133,9 @@ func (c *Client) ListRepos(ctx context.Context, owner string) ([]RepoInfo, error
 	var result []RepoInfo
 	for _, r := range repos {
 		result = append(result, RepoInfo{
-			Owner:    owner,
-			Name:     r.Name,
-			FullName: r.FullName,
+			Owner:         owner,
+			Name:          r.Name,
+			FullName:      r.FullName,
 			DefaultBranch: r.DefaultBranch,
 		})
 	}

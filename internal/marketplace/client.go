@@ -15,10 +15,10 @@ import (
 const defaultRegistryURL = "https://raw.githubusercontent.com/ying-sun1/skill-tui/main/configs/registry.json"
 
 type Client struct {
-	httpClient   *http.Client
-	registryURL  string
-	localPaths   []string
-	cache        *Cache
+	httpClient  *http.Client
+	registryURL string
+	localPaths  []string
+	cache       *Cache
 }
 
 type Publisher struct {
@@ -60,10 +60,10 @@ func NewClient() *Client {
 	localPaths = append(localPaths, "configs/registry.json")
 
 	return &Client{
-		httpClient:   &http.Client{Timeout: 15 * time.Second},
-		registryURL:  defaultRegistryURL,
-		localPaths:   localPaths,
-		cache:        NewCache(),
+		httpClient:  &http.Client{Timeout: 15 * time.Second},
+		registryURL: defaultRegistryURL,
+		localPaths:  localPaths,
+		cache:       NewCache(),
 	}
 }
 

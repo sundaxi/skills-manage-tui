@@ -23,10 +23,10 @@ type Explainer struct {
 }
 
 type Explanation struct {
-	SkillName  string    `json:"skill_name"`
-	Content    string    `json:"content"`
-	Provider   string    `json:"provider"`
-	GeneratedAt string   `json:"generated_at"`
+	SkillName   string `json:"skill_name"`
+	Content     string `json:"content"`
+	Provider    string `json:"provider"`
+	GeneratedAt string `json:"generated_at"`
 }
 
 func NewExplainer(provider, apiKey, endpoint string) *Explainer {
