@@ -1,8 +1,8 @@
 # skills-manage-tui
 
+[![English](https://img.shields.io/badge/English-lightgrey?style=flat-square&labelColor=2196F3&color=2196F3&label=%F0%9F%87%AC%F0%9F%87%A7&link=README.md)](README.md) [![中文](https://img.shields.io/badge/%E4%B8%AD%E6%96%87-2196F3?style=flat-square&labelColor=E91E63&color=E91E63&label=%F0%9F%87%A8%F0%9F%87%B3&link=README_zh.md)](README_zh.md)
+
 > 一个用于统一管理多平台 AI 编程 Agent Skills 的命令行工具
->
-> [English](README.md)
 
 > **声明：** 作者很懒，后续大概率不会更新了。欢迎 fork 继续开发。
 
