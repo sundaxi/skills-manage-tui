@@ -2,15 +2,14 @@
 
 [![English](https://img.shields.io/badge/English-2196F3?style=flat-square&labelColor=2196F3&color=2196F3&label=%F0%9F%87%AC%F0%9F%87%A7&link=README.md)](README.md) [![中文](https://img.shields.io/badge/%E4%B8%AD%E6%96%87-lightgrey?style=flat-square&labelColor=E91E63&color=E91E63&label=%F0%9F%87%A8%F0%9F%87%B3&link=README_zh.md)](README_zh.md)
 
-> A CLI tool for managing AI coding agent skills across multiple platforms
-
-> **Note:** The author is lazy. This project is unlikely to receive further updates. Feel free to fork and carry it forward.
+> A CLI tool for managing AI coding agent skills and plugins across multiple platforms
 
 ## Development Status
 
 | Feature | Status |
 |---------|--------|
 | Skill management (list / install / sync / remove) | **Available** |
+| Plugin management (marketplace install / uninstall) | **Available** |
 | Interactive TUI | **Available** |
 | Multi-platform symlink | **Available** |
 | Marketplace | Coming soon |
@@ -22,9 +21,11 @@
 ## Features
 
 - **Central skill registry** — `~/.agents/skills/` as single source of truth, distributed via symlinks
+- **Plugin management** — Install/uninstall marketplace plugins via native CLI commands (Claude Code, Copilot, Hermes)
 - **28+ platforms** — Claude Code, Cursor, Gemini CLI, Copilot, Windsurf, Aider, etc.
 - **Interactive TUI** — Multi-select, real-time search, Markdown detail view, Catppuccin theme, mouse support
 - **Platform matrix** — Per-skill install status across all platforms (checkmark / dot)
+- **Status bar feedback** — Color-coded success/error messages for all operations
 - **Auto scroll/pagination** — Automatic scrolling when skills exceed screen height
 - **Bilingual** — Auto-detects system language (Chinese / English)
 
@@ -71,7 +72,7 @@ skill-tui remove my-skill --purge       # Also delete from central registry
 Launches the TUI with four tabs:
 
 ```
- 1 Skills   2 Marketplace   3 Collections   4 Settings
+ 1 Skills   2 Marketplace   3 Plugin   4 Settings
 ```
 
 **Keyboard shortcuts (Skills tab):**
@@ -116,6 +117,28 @@ Each skill row shows install status across platforms:
 **Auto pagination:**
 
 When the skill list exceeds screen height, scrolling activates automatically with a position indicator at the bottom (e.g. `─── 1-15 / 30 ───`).
+
+**Keyboard shortcuts (Plugin tab):**
+
+| Key | Action |
+|-----|--------|
+| Up/k  Down/j | Navigate |
+| Enter / d | View plugin detail |
+| a | Add marketplace (GitHub URL or owner/repo) |
+| i | Install to selected platforms |
+| u | Uninstall from all platforms |
+| x | Delete marketplace (uninstall + remove clone) |
+| r | Refresh |
+| Esc | Go back |
+
+**Plugin platform matrix:**
+
+```
+                         claude  copilot hermes
+──────────────────────────────────────────────────
+  ECC                     ✓       ✓       ✓
+  CLI-Anything            ✓       ·       ✓
+```
 
 ### `skill-tui list`
 
@@ -179,6 +202,7 @@ Config file: `~/.skill-tui/config.yaml`. Environment variables override with `SK
 | Key | Default | Description |
 |-----|---------|-------------|
 | `skills_path` | `~/.agents/skills/` | Central skill registry path |
+| `plugins_path` | `~/.agents/Plugins/` | Plugin marketplace clone directory |
 | `theme` | `mocha` | TUI theme (`mocha` / `latte`) |
 | `accent_color` | `mauve` | 10 Catppuccin accent colors |
 | `language` | `auto` | Language (`auto` / `zh` / `en`) |
@@ -213,6 +237,8 @@ Custom platforms can be added via Settings or by editing `configs/platforms.yaml
 
 ## How It Works
 
+### Skills (Symlink-based)
+
 ```
 Central Registry                    Platform Skills Directories
 ~/.agents/skills/                   ~/.claude/skills/
@@ -228,6 +254,30 @@ Central Registry                    Platform Skills Directories
 2. Installing creates a symlink in the platform's skills directory
 3. One source file is shared across all platforms
 4. Editing the central copy is instantly reflected everywhere
+
+### Plugins (Native CLI-based)
+
+Plugins use each platform's native CLI for installation, ensuring full compatibility:
+
+```
+skill-tui managed (plugins_path)
+├── ECC/                  ← git clone of marketplace repo
+├── CLI-Anything/         ← git clone
+└── ...
+
+Install flow (per platform):
+  Claude Code → claude plugin marketplace add <local-path>
+              → claude plugin install <plugin>@<marketplace>
+  Copilot     → copilot plugin marketplace add <local-path>
+              → copilot plugin install <plugin>@<marketplace>
+  Hermes      → adapter: creates plugin.yaml + __init__.py
+              → hermes plugins enable <name>
+```
+
+Key design decisions:
+- **Local clone path** passed to CLI (avoids SSH failures and clone timeouts)
+- **Hermes adapter pattern** — generates compatible plugin structure since hermes has an incompatible plugin format
+- **Status bar feedback** — shows success (✓) or error (✗) after every operation
 
 ## Tech Stack
 

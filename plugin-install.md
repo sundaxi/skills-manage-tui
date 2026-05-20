@@ -1,7 +1,7 @@
 # Plugin 安装机制设计文档
 
-> 最后更新: 2026-05-20  
-> 基于 Claude Code 和 Copilot CLI 的实际文件系统分析和官方文档研究
+> 最后更新: 2026-07-09  
+> 基于 Claude Code、Copilot CLI 和 Hermes 的实际文件系统分析和 CLI 验证
 
 ## 一、平台插件系统对比
 
@@ -151,17 +151,64 @@
 
 ---
 
+### Hermes (`~/.hermes/`)
+
+**⚠️ Hermes 使用完全不兼容的插件系统 (Python-based)**
+
+**目录结构:**
+```
+~/.hermes/
+├── plugins/
+│   ├── <plugin-name>/
+│   │   ├── plugin.yaml              ← 元数据 (name, version, description, author)
+│   │   ├── __init__.py              ← 入口文件, 必须定义 register(ctx)
+│   │   └── <marketplace-clone>/     ← symlink 到 plugins_path/<repo>/
+│   └── ...
+├── skills/                           ← 全局 skills
+└── config.yaml                       ← Hermes 配置
+```
+
+**plugin.yaml:**
+```yaml
+name: ecc
+version: "1.0.0"
+description: "Everything Claude Code"
+author: "affaan-m"
+```
+
+**__init__.py:**
+```python
+"""Skill-tui managed plugin: ecc"""
+
+def register(ctx):
+    pass
+```
+
+**CLI 命令:**
+- `hermes plugins install <git-url>` — 从 Git URL 安装 (60s timeout, 不支持本地路径)
+- `hermes plugins enable <name>` — 启用已存在的插件
+- `hermes plugins disable <name>` — 禁用
+- `hermes plugins remove <name>` — 删除插件目录
+- `hermes plugins list` — 列表 (Name/Status/Version/Description/Source)
+
+**适配策略:** skill-tui 绕过 `hermes plugins install` (timeout 太短, 不支持本地路径),
+直接创建 `~/.hermes/plugins/<name>/` 目录 (plugin.yaml + __init__.py + symlink),
+然后用 `hermes plugins enable` 激活。
+
+---
+
 ### 关键差异总结
 
-| 方面 | Claude Code | Copilot |
-|------|-------------|---------|
-| 安装目录 | `plugins/cache/<mp>/<p>/<ver>/` | `installed-plugins/<mp>/<p>/` |
-| 版本在路径中 | ✅ | ❌ |
-| 安装记录文件 | `installed_plugins.json` | `config.json` → `installedPlugins[]` |
-| Marketplace 注册 | `known_marketplaces.json` + `settings.json` | 仅 `settings.json` → `extraKnownMarketplaces` |
-| Marketplace 缓存 | `~/.claude/plugins/marketplaces/` | `~/Library/Caches/copilot/marketplaces/` |
-| enabledPlugins 键格式 | `mp@plugin` | `plugin@mp` (注意顺序!) |
-| config.json | 不存在 | 自动管理, 有注释行前缀 |
+| 方面 | Claude Code | Copilot | Hermes |
+|------|-------------|---------|--------|
+| 安装目录 | `plugins/cache/<mp>/<p>/<ver>/` | `installed-plugins/<mp>/<p>/` | `plugins/<name>/` |
+| 版本在路径中 | ✅ | ❌ | ❌ |
+| 安装记录文件 | `installed_plugins.json` | `config.json` → `installedPlugins[]` | 目录即记录 |
+| Marketplace 注册 | `known_marketplaces.json` + `settings.json` | 仅 `settings.json` | 不适用 |
+| Marketplace 缓存 | `~/.claude/plugins/marketplaces/` | `~/Library/Caches/copilot/marketplaces/` | 不适用 |
+| 安装方式 | CLI (`claude plugin`) | CLI (`copilot plugin`) | 适配器 (直接写文件) |
+| enabledPlugins 键格式 | `mp@plugin` | `mp@plugin` | 不适用 |
+| config.json | 不存在 | 自动管理, 有注释行前缀 | 不适用 |
 
 ---
 
@@ -242,8 +289,8 @@ plugin-name/
 ### 核心原则
 
 1. **skill-tui 统一管理源码** — 所有 plugin 源码 clone 到 `plugins_path` (用户配置)
-2. **按平台原生格式安装** — 每个平台写入各自预期的配置文件
-3. **不创建平台不读取的文件** — 不在 Copilot 下写 `installed_plugins.json` 等
+2. **使用平台原生 CLI 安装** — 通过 `claude plugin`、`copilot plugin` 命令安装
+3. **Hermes 适配器模式** — 直接创建兼容目录结构, 绕过不兼容的 CLI
 
 ### 架构图
 
@@ -252,7 +299,7 @@ plugin-name/
 │  skill-tui 统一管理层                                      │
 │                                                          │
 │  plugins_path (e.g. _Shared/Plugins/)                    │
-│  ├── ecc/              ← git clone                       │
+│  ├── ECC/              ← git clone                       │
 │  ├── CLI-Anything/     ← git clone                       │
 │  └── superpowers/      ← git clone                       │
 │                                                          │
@@ -262,82 +309,97 @@ plugin-name/
         ┌──────┴──────┐
         │  Install to  │
         │  Platform    │
-        └──┬───────┬──┘
-           │       │
-     ┌─────▼──┐  ┌─▼──────────┐
-     │ Claude │  │  Copilot   │
-     │ Code   │  │  CLI       │
-     └────┬───┘  └─────┬──────┘
-          │            │
-          ▼            ▼
+        └──┬───┬────┬─┘
+           │   │    │
+     ┌─────▼┐ ┌▼───┐ ┌▼──────┐
+     │Claude│ │Copi│ │Hermes │
+     │ Code │ │lot │ │       │
+     └──┬───┘ └─┬──┘ └──┬────┘
+        │       │       │
+        ▼       ▼       ▼
 
-Claude Code 写入:                 Copilot 写入:
-~/.claude/                        ~/.copilot/
-├── plugins/                      ├── installed-plugins/<mp>/<p>/  ← 文件拷贝
-│   ├── marketplaces/<name>       ├── plugin-data/<mp>/<p>/        ← 空目录
-│   │   → symlink to plugins_path ├── config.json                  ← installedPlugins[]
-│   ├── cache/<mp>/<p>/<ver>/     └── settings.json                ← enabledPlugins
-│   │   ← 文件拷贝                                                   + extraKnownMarketplaces
-│   ├── installed_plugins.json
-│   └── known_marketplaces.json
-└── settings.json
-    ← enabledPlugins
-    + extraKnownMarketplaces
+Claude Code:            Copilot:               Hermes:
+$ claude plugin         $ copilot plugin       直接写文件 (适配器)
+  marketplace add         marketplace add      ~/.hermes/plugins/<name>/
+  <local-path>            <local-path>         ├── plugin.yaml
+$ claude plugin         $ copilot plugin       ├── __init__.py
+  install <p>@<mp>        install <p>@<mp>     └── <mp> → symlink
+                                               $ hermes plugins enable
 ```
 
-### 安装流程 (Claude Code)
+### 安装流程 (通用)
 
 ```
-1. SymlinkPlugin
-   ~/.claude/plugins/marketplaces/<name> → plugins_path/<repo>/
+1. skill-tui clone repo → plugins_path/<repo-name>/
+   (带 300s timeout, 部分 clone 清理, 大小写重命名保护)
 
-2. CopyPluginToCache
-   plugins_path/<repo>/ → ~/.claude/plugins/cache/<mp>/<plugin>/<version>/
-   version = git SHA 前 12 位 (无 semver 时)
+2. 用户选择目标平台 (多选)
 
-3. RecordInstalledPlugins
-   → installed_plugins.json: {"version":2, "plugins":{"mp@plugin":[{...}]}}
-
-4. RecordKnownMarketplace
-   → known_marketplaces.json: {"name":{"source":{...},"installLocation":"..."}}
-
-5. EnablePluginInSettings
-   → settings.json: enabledPlugins["mp@plugin"] = true
-   → settings.json: extraKnownMarketplaces["name"] = {source:{...}}
+3. 对每个平台调用 InstallMarketplaceViaCLI():
+   - Claude/Copilot: 传递本地 clone 路径给 CLI
+   - Hermes: 创建适配器目录 + enable
 ```
 
-### 安装流程 (Copilot)
+### 安装流程 (Claude Code — 通过 CLI)
 
 ```
-1. CopyPluginToCopilot (不需要 symlink, Copilot 不读 marketplaces/)
-   plugins_path/<repo>/ → ~/.copilot/installed-plugins/<mp>/<plugin>/
+1. AddMarketplaceViaCLI("claude-code", localPath)
+   → exec: claude plugin marketplace add <local-clone-path>
 
-2. CreatePluginDataDir
-   → ~/.copilot/plugin-data/<mp>/<plugin>/  (空目录)
+2. InstallPluginViaCLI("claude-code", pluginName)
+   → exec: claude plugin install <plugin>@<marketplace>
 
-3. UpdateCopilotConfig
-   → config.json: 追加到 installedPlugins[] 数组
-   (注意: config.json 开头有注释行, 需特殊解析)
+(Claude CLI 自动处理: marketplaces/ symlink, cache/ 拷贝,
+ installed_plugins.json, known_marketplaces.json, settings.json)
+```
 
-4. UpdateCopilotSettings
-   → settings.json: enabledPlugins["plugin@mp"] = true
-   → settings.json: extraKnownMarketplaces["name"] = {source:{...}}
+### 安装流程 (Copilot — 通过 CLI)
+
+```
+1. AddMarketplaceViaCLI("copilot", localPath)
+   → exec: copilot plugin marketplace add <local-clone-path>
+
+2. InstallPluginViaCLI("copilot", pluginName)
+   → exec: copilot plugin install <plugin>@<marketplace>
+
+(Copilot CLI 自动处理: installed-plugins/ 拷贝, config.json,
+ settings.json enabledPlugins + extraKnownMarketplaces)
+```
+
+### 安装流程 (Hermes — 适配器模式)
+
+```
+1. hermesCreatePluginDir(pluginName, localPath, marketplace)
+   → 创建 ~/.hermes/plugins/<name>/
+   → 写入 plugin.yaml (从 marketplace metadata 生成)
+   → 写入 __init__.py (minimal: def register(ctx): pass)
+   → symlink: <name>/<mp-name> → plugins_path/<repo>/
+
+2. exec: hermes plugins enable <name>
+
+为什么绕过 hermes plugins install:
+- 60s timeout (大 repo 不够)
+- 不支持本地路径 (只接受 git URL)
+- 插件格式不兼容 (plugin.yaml + __init__.py vs .claude-plugin/)
 ```
 
 ### 卸载流程
 
-**Claude Code:**
-1. 删除 `plugins/marketplaces/<name>` symlink
-2. 删除 `plugins/cache/<mp>/` 目录
-3. 从 `installed_plugins.json` 移除相关条目
-4. 从 `known_marketplaces.json` 移除
-5. 从 `settings.json` 移除 `enabledPlugins` 和 `extraKnownMarketplaces` 条目
+```
+Claude Code:  claude plugin uninstall <plugin>@<marketplace>
+Copilot:      copilot plugin uninstall <name>
+Hermes:       hermes plugins remove <name>
+```
 
-**Copilot:**
-1. 删除 `installed-plugins/<mp>/` 目录
-2. 删除 `plugin-data/<mp>/` 目录
-3. 从 `config.json` 的 `installedPlugins[]` 移除
-4. 从 `settings.json` 移除 `enabledPlugins` 和 `extraKnownMarketplaces` 条目
+### 安装检测
+
+```go
+IsPluginInstalled(platformName, pluginName) bool
+
+// Claude Code: 检查 ~/.claude/plugins/installed_plugins.json 中是否有 "<name>@<name>" key
+// Copilot:     检查 ~/.copilot/installed-plugins/<name>/ 目录是否存在
+// Hermes:      运行 hermes plugins list, 解析输出表格查找 plugin 名称
+```
 
 ### 平台类型分类
 
@@ -345,11 +407,11 @@ Claude Code 写入:                 Copilot 写入:
 func PluginInstallClass(name string) PluginInstallType {
     switch name {
     case "claude-code":
-        return PluginInstallClaude    // 完整 Claude 安装流程
+        return PluginInstallClaude    // CLI: claude plugin
     case "copilot":
-        return PluginInstallCopilot   // Copilot 原生流程 (config.json)
+        return PluginInstallCopilot   // CLI: copilot plugin
     case "hermes":
-        return PluginInstallUnsupported // 完全不兼容
+        return PluginInstallHermes    // 适配器: 直接写文件 + enable
     default:
         return PluginInstallSymlinkOnly // 仅 skills 目录 symlink
     }
@@ -389,12 +451,13 @@ Copilot 的 `config.json` 开头有注释行 (非标准 JSON):
 
 ---
 
-## 六、与旧代码的差异 (需修复)
+## 六、关键发现与解决方案
 
-| 当前实现 | 正确行为 | 影响 |
-|---------|---------|------|
-| Copilot: `installedPlugins` 写入 `settings.json` | 应写入 `config.json` | 安装记录位置错误 |
-| Copilot: 写入 `installed_plugins.json` | Copilot 不读取此文件 | 无效操作 |
-| Copilot: 写入 `known_marketplaces.json` | Copilot 不读取此文件 | 无效操作 |
-| Copilot: symlink 到 `plugins/marketplaces/` | Copilot 不读此目录 | 无效操作 |
-| Copilot: 安装到 `plugins/cache/` | 应安装到 `installed-plugins/` | 路径错误 |
+| 问题 | 原因 | 解决方案 |
+|------|------|---------|
+| SSH host key failure | 子进程 exec 用 owner/repo 时走 SSH | 传递本地 clone 路径而非 URL |
+| Clone timeout | ECC ~16MB, 需 2+ 分钟 | timeout 增至 300s + 部分 clone 清理 |
+| 大小写冲突 (macOS) | APFS 大小写不敏感, `os.RemoveAll("ecc")` 删除 `ECC` | `strings.EqualFold` 检查 + 两步重命名 (via temp) |
+| Hermes timeout | `hermes plugins install` 只有 60s | 绕过 CLI, 直接写文件 |
+| Hermes 不支持本地路径 | 只接受 git URL 或 owner/repo | 适配器模式: 创建兼容目录结构 |
+| Hermes 格式不兼容 | plugin.yaml + __init__.py vs .claude-plugin/ | 从 marketplace metadata 生成兼容文件 |
