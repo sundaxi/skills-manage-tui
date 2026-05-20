@@ -123,18 +123,17 @@ func (s *Store) RemoveRecord(name string) error {
 	return s.saveCloned(records)
 }
 
-// ScanMarketplaces scans pluginsDir for marketplace directories.
+// ScanMarketplaces scans pluginsDir for marketplace directories
+// and includes recorded marketplaces whose directories may be missing.
 func (s *Store) ScanMarketplaces() ([]Marketplace, error) {
+	records, _ := s.loadCloned()
+
 	entries, err := os.ReadDir(s.pluginsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
-	records, _ := s.loadCloned()
-
+	seen := make(map[string]bool)
 	var marketplaces []Marketplace
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
@@ -152,6 +151,17 @@ func (s *Store) ScanMarketplaces() ([]Marketplace, error) {
 		}
 		mp.Status = "cloned"
 		marketplaces = append(marketplaces, mp)
+		seen[mp.Name] = true
+	}
+
+	// Include recorded marketplaces whose directories are missing on disk.
+	// This can happen if the clone was deleted or on case-insensitive FS issues.
+	for name, rec := range records {
+		if seen[name] {
+			continue
+		}
+		rec.Status = "missing"
+		marketplaces = append(marketplaces, rec)
 	}
 
 	return marketplaces, nil
@@ -186,10 +196,24 @@ func (s *Store) AddByRepo(ctx context.Context, repoRef string) (*Marketplace, er
 	if mp.Name != "" && mp.Name != repoName {
 		canonicalDir := filepath.Join(s.pluginsDir, mp.Name)
 		if canonicalDir != targetDir {
-			// Remove any existing directory at the target name
-			os.RemoveAll(canonicalDir)
-			if err := os.Rename(targetDir, canonicalDir); err == nil {
-				targetDir = canonicalDir
+			if strings.EqualFold(mp.Name, repoName) {
+				// Case-only difference: on case-insensitive FS (macOS APFS),
+				// RemoveAll would delete the source. Rename directly to change
+				// the display case, using a temp intermediate to be safe.
+				tmpDir := targetDir + ".tmp-rename"
+				if err := os.Rename(targetDir, tmpDir); err == nil {
+					if err := os.Rename(tmpDir, canonicalDir); err == nil {
+						targetDir = canonicalDir
+					} else {
+						os.Rename(tmpDir, targetDir) // rollback
+					}
+				}
+			} else {
+				// Completely different names: safe to remove target first.
+				os.RemoveAll(canonicalDir)
+				if err := os.Rename(targetDir, canonicalDir); err == nil {
+					targetDir = canonicalDir
+				}
 			}
 		}
 	}

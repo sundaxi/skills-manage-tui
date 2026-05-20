@@ -1078,6 +1078,8 @@ func (m AppModel) renderPluginList() string {
 		switch mp.Status {
 		case "cloned":
 			check = m.theme.Success.Render("✓")
+		case "missing":
+			check = m.theme.Warning.Render("!")
 		default:
 			check = m.theme.Dimmed.Render("·")
 		}
