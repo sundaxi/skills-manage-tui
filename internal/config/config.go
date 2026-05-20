@@ -15,6 +15,7 @@ const (
 
 type Config struct {
 	SkillsPath      string     `mapstructure:"skills_path"`
+	PluginsPath     string     `mapstructure:"plugins_path"`
 	Platforms       []Platform `mapstructure:"platforms"`
 	Theme           string     `mapstructure:"theme"`
 	AccentColor     string     `mapstructure:"accent_color"`
@@ -27,9 +28,10 @@ type Config struct {
 }
 
 type Platform struct {
-	Name      string `mapstructure:"name" yaml:"name"`
-	Category  string `mapstructure:"category" yaml:"category"`
-	SkillsDir string `mapstructure:"skills_dir" yaml:"skills_dir"`
+	Name        string `mapstructure:"name" yaml:"name"`
+	Category    string `mapstructure:"category" yaml:"category"`
+	SkillsDir   string `mapstructure:"skills_dir" yaml:"skills_dir"`
+	CommandsDir string `mapstructure:"commands_dir" yaml:"commands_dir"`
 }
 
 var cfg *Config
@@ -48,6 +50,7 @@ func Load() (*Config, error) {
 	v.AddConfigPath(".")
 
 	v.SetDefault("skills_path", filepath.Join(home, DefaultSkills))
+	v.SetDefault("plugins_path", filepath.Join(home, DefaultSkills, "..", "Plugins"))
 	v.SetDefault("theme", "mocha")
 	v.SetDefault("accent_color", "mauve")
 	v.SetDefault("language", "auto")
@@ -71,6 +74,7 @@ func Load() (*Config, error) {
 
 	cfg = &Config{
 		SkillsPath:  skillsPath,
+		PluginsPath: v.GetString("plugins_path"),
 		Theme:       v.GetString("theme"),
 		AccentColor: v.GetString("accent_color"),
 		Language:    v.GetString("language"),
@@ -119,6 +123,7 @@ func Save(c *Config) error {
 	_ = v.ReadInConfig()
 
 	v.Set("skills_path", c.SkillsPath)
+	v.Set("plugins_path", c.PluginsPath)
 	v.Set("theme", c.Theme)
 	v.Set("accent_color", c.AccentColor)
 	v.Set("language", c.Language)

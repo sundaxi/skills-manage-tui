@@ -41,7 +41,10 @@ type marketplaceClonedMsg struct {
 type marketplaceInstalledMsg struct {
 	marketplace *plugin.Marketplace
 	err         error
+	platforms   []string // which platforms were targeted
 }
+
+type clearStatusMsg struct{}
 
 type view int
 
@@ -97,6 +100,9 @@ type AppModel struct {
 
 	lastClickTime time.Time
 	lastClickRow  int
+
+	statusMessage string
+	statusIsError bool
 
 	err error
 }
@@ -157,9 +163,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentView = viewList
 		if msg.err != nil {
 			m.err = msg.err
+			m.statusMessage = fmt.Sprintf("✗ Clone failed: %s", msg.err)
+			m.statusIsError = true
+		} else if msg.marketplace != nil {
+			m.statusMessage = fmt.Sprintf("✓ Cloned %s", msg.marketplace.Name)
+			m.statusIsError = false
 		}
 		m.loadPlugins()
-		return m, nil
+		return m, m.clearStatusAfter(5 * time.Second)
 
 	case marketplaceInstalledMsg:
 		m.pluginCloning = false
@@ -167,8 +178,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailMarketplace = nil
 		if msg.err != nil {
 			m.err = msg.err
+			m.statusMessage = fmt.Sprintf("✗ Install failed: %s", msg.err)
+			m.statusIsError = true
+		} else if msg.marketplace != nil {
+			platStr := strings.Join(msg.platforms, ", ")
+			m.statusMessage = fmt.Sprintf("✓ Installed %s → %s", msg.marketplace.Name, platStr)
+			m.statusIsError = false
 		}
 		m.loadPlugins()
+		return m, m.clearStatusAfter(5 * time.Second)
+
+	case clearStatusMsg:
+		m.statusMessage = ""
+		m.statusIsError = false
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -1014,6 +1036,15 @@ func (m AppModel) renderPluginTab() string {
 	case viewPluginDetail:
 		return m.renderPluginDetail()
 	case viewPluginInstall:
+		if m.pluginCloning {
+			name := ""
+			if m.detailMarketplace != nil {
+				name = m.detailMarketplace.Name
+			}
+			return fmt.Sprintf("\n  %s\n\n  %s",
+				m.theme.Accent.Render(fmt.Sprintf("Installing %s... please wait", name)),
+				m.theme.Dimmed.Render("This may take a moment for each platform"))
+		}
 		return m.multiSel.View()
 	case viewPluginAdd:
 		return m.renderPluginAdd()
@@ -1282,10 +1313,12 @@ func (m AppModel) handlePluginList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "x":
 		if len(m.marketplaces) > 0 {
 			m.deleteMarketplace(m.marketplaces[m.pluginCursor].Name)
+			return m, m.clearStatusAfter(5 * time.Second)
 		}
 	case "u":
 		if len(m.marketplaces) > 0 {
 			m.uninstallPlatformLinks(m.marketplaces[m.pluginCursor].Name)
+			return m, m.clearStatusAfter(5 * time.Second)
 		}
 	case "r":
 		m.loadPlugins()
@@ -1341,12 +1374,14 @@ func (m AppModel) handleMarketplaceDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			return m, m.clearStatusAfter(5 * time.Second)
 		}
 	case "x":
 		if m.detailMarketplace != nil {
 			m.deleteMarketplace(m.detailMarketplace.Name)
 			m.detailMarketplace = nil
 			m.currentView = viewList
+			return m, m.clearStatusAfter(5 * time.Second)
 		}
 	}
 	return m, nil
@@ -1384,9 +1419,11 @@ func (m AppModel) handleMarketplaceInstall(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			store := m.pluginStore
 
 			platList := m.platforms
+			selectedCopy := make([]string, len(selected))
+			copy(selectedCopy, selected)
 			return m, func() tea.Msg {
-				err := doInstallMarketplaceSync(store, platList, &mp, selected)
-				return marketplaceInstalledMsg{marketplace: &mp, err: err}
+				err := doInstallMarketplaceSync(store, platList, &mp, selectedCopy)
+				return marketplaceInstalledMsg{marketplace: &mp, err: err, platforms: selectedCopy}
 			}
 		}
 		m.currentView = viewList
@@ -1441,9 +1478,10 @@ func doInstallMarketplaceSync(store *plugin.Store, platList []platform.Platform,
 }
 
 func (m *AppModel) uninstallPlatformLinks(name string) {
-	// Build plugin name list from marketplace
 	pluginNames := m.pluginNamesForMarketplace(name)
 
+	var failed []string
+	var succeeded []string
 	for _, pl := range m.platforms {
 		if pl.Category == "central" {
 			continue
@@ -1455,8 +1493,20 @@ func (m *AppModel) uninstallPlatformLinks(name string) {
 
 		cli := platform.PlatformCLI(pl.Name)
 		if cli != "" {
-			platform.UninstallMarketplaceViaCLI(pl.Name, pluginNames)
+			if err := platform.UninstallMarketplaceViaCLI(pl.Name, pluginNames); err != nil {
+				failed = append(failed, fmt.Sprintf("%s (%s)", pl.Name, err))
+			} else {
+				succeeded = append(succeeded, pl.Name)
+			}
 		}
+	}
+
+	if len(failed) > 0 {
+		m.statusMessage = fmt.Sprintf("✗ Uninstall failed: %s", strings.Join(failed, ", "))
+		m.statusIsError = true
+	} else if len(succeeded) > 0 {
+		m.statusMessage = fmt.Sprintf("✓ Uninstalled %s from %s", name, strings.Join(succeeded, ", "))
+		m.statusIsError = false
 	}
 	m.loadPlugins()
 }
@@ -1464,6 +1514,8 @@ func (m *AppModel) uninstallPlatformLinks(name string) {
 func (m *AppModel) deleteMarketplace(name string) {
 	m.uninstallPlatformLinks(name)
 	m.pluginStore.RemoveMarketplace(name)
+	m.statusMessage = fmt.Sprintf("✓ Deleted %s", name)
+	m.statusIsError = false
 	m.loadPlugins()
 }
 
@@ -1556,5 +1608,14 @@ func (m AppModel) renderStatusBar() string {
 		m.statusBar.Path = m.cfg.SkillsPath
 	}
 
+	m.statusBar.Message = m.statusMessage
+	m.statusBar.MessageIsError = m.statusIsError
+
 	return m.statusBar.View()
+}
+
+func (m AppModel) clearStatusAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg {
+		return clearStatusMsg{}
+	})
 }

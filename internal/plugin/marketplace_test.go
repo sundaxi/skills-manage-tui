@@ -255,10 +255,10 @@ func TestAddByRepoCaseInsensitiveRename(t *testing.T) {
 
 func TestParseMarketplacePluginSourceTypes(t *testing.T) {
 	tests := []struct {
-		name       string
-		json       string
-		wantPath   string
-		wantURL    string
+		name     string
+		json     string
+		wantPath string
+		wantURL  string
 	}{
 		{
 			"string source",
