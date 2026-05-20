@@ -23,9 +23,27 @@ func PlatformCLI(platformName string) string {
 	}
 }
 
+// ExtractOwnerRepo extracts "owner/repo" from a GitHub URL.
+// Returns the original string if it's not a recognized GitHub URL.
+func ExtractOwnerRepo(repoURL string) string {
+	repoURL = strings.TrimSuffix(strings.TrimSuffix(repoURL, "/"), ".git")
+	// Handle https://github.com/owner/repo
+	for _, prefix := range []string{
+		"https://github.com/",
+		"http://github.com/",
+		"git@github.com:",
+	} {
+		if strings.HasPrefix(repoURL, prefix) {
+			return repoURL[len(prefix):]
+		}
+	}
+	return repoURL
+}
+
 // AddMarketplaceViaCLI registers a marketplace with the platform CLI.
-// For claude/copilot: <cli> plugin marketplace add <source>
+// For claude: claude plugin marketplace add <source>
 // For hermes: creates plugin directory with generated plugin.yaml + __init__.py
+// Copilot does not need marketplace registration (uses direct install).
 func AddMarketplaceViaCLI(platformName, source string) error {
 	cli := PlatformCLI(platformName)
 	if cli == "" {
@@ -49,8 +67,9 @@ func AddMarketplaceViaCLI(platformName, source string) error {
 	return nil
 }
 
-// InstallPluginViaCLI installs a plugin from a registered marketplace.
-// For claude/copilot: <cli> plugin install <plugin>@<marketplace>
+// InstallPluginViaCLI installs a single plugin.
+// For claude: claude plugin install <plugin>@<marketplace>
+// For copilot: copilot plugin install <source> (owner/repo or plugin@marketplace)
 // For hermes: hermes plugins enable <plugin>
 func InstallPluginViaCLI(platformName, pluginName, marketplaceName string) error {
 	cli := PlatformCLI(platformName)
@@ -102,19 +121,80 @@ func UninstallPluginViaCLI(platformName, pluginName string) error {
 	return nil
 }
 
-// InstallMarketplaceViaCLI performs the full marketplace install flow.
-func InstallMarketplaceViaCLI(platformName, repoRef string, marketplaceName string, pluginNames []string) error {
-	if err := AddMarketplaceViaCLI(platformName, repoRef); err != nil {
-		return fmt.Errorf("adding marketplace: %w", err)
+// InstallMarketplaceViaCLI performs platform-specific plugin installation.
+//
+// Claude Code: marketplace add + plugin install (two-step)
+// Copilot: direct plugin install from owner/repo (single step, no marketplace needed)
+// Hermes: create plugin dir
+func InstallMarketplaceViaCLI(platformName, repoSource, localPath, marketplaceName string, pluginNames []string) error {
+	cli := PlatformCLI(platformName)
+	if cli == "" {
+		return fmt.Errorf("platform %q has no CLI plugin support", platformName)
 	}
 
-	for _, pluginName := range pluginNames {
-		if err := InstallPluginViaCLI(platformName, pluginName, marketplaceName); err != nil {
-			return fmt.Errorf("installing plugin %s: %w", pluginName, err)
+	switch cli {
+	case "copilot":
+		return installViaCopilot(repoSource, localPath, pluginNames)
+	case "claude":
+		return installViaClaude(repoSource, localPath, marketplaceName, pluginNames)
+	case "hermes":
+		return installViaHermes(localPath, pluginNames)
+	}
+	return nil
+}
+
+// installViaCopilot installs plugins using Copilot's direct install command.
+// Copilot supports: copilot plugin install owner/repo
+// Falls back to direct file manipulation if CLI is unavailable.
+func installViaCopilot(repoSource, localPath string, pluginNames []string) error {
+	// Copilot can install directly from owner/repo — no marketplace registration needed
+	source := ExtractOwnerRepo(repoSource)
+
+	cmd := exec.Command("copilot", "plugin", "install", source)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		out := strings.TrimSpace(string(output))
+		if strings.Contains(out, "already") {
+			return nil
+		}
+		return fmt.Errorf("copilot plugin install failed: %s: %w", out, err)
+	}
+	return nil
+}
+
+// installViaClaude uses Claude Code's two-step marketplace flow:
+// 1. claude plugin marketplace add <source> (register the marketplace)
+// 2. claude plugin install <plugin>@<marketplace> (install each plugin)
+// Uses the local path as source since Claude supports "URL, path, or GitHub repo".
+func installViaClaude(repoSource, localPath, marketplaceName string, pluginNames []string) error {
+	// Use local path if available (avoids re-cloning), fall back to repo URL
+	source := localPath
+	if source == "" {
+		source = repoSource
+	}
+
+	if err := AddMarketplaceViaCLI("claude-code", source); err != nil {
+		// If local path fails, retry with the repo URL
+		if source == localPath && repoSource != "" {
+			if err2 := AddMarketplaceViaCLI("claude-code", repoSource); err2 != nil {
+				return fmt.Errorf("adding marketplace: %w (also tried repo URL: %v)", err, err2)
+			}
+		} else {
+			return fmt.Errorf("adding marketplace: %w", err)
 		}
 	}
 
+	for _, pluginName := range pluginNames {
+		if err := InstallPluginViaCLI("claude-code", pluginName, marketplaceName); err != nil {
+			return fmt.Errorf("installing plugin %s: %w", pluginName, err)
+		}
+	}
 	return nil
+}
+
+// installViaHermes creates a hermes plugin directory from the local clone.
+func installViaHermes(localPath string, pluginNames []string) error {
+	return hermesCreatePluginDir(localPath)
 }
 
 // UninstallMarketplaceViaCLI uninstalls all plugins from a marketplace.

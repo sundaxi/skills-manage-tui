@@ -1456,6 +1456,9 @@ func doInstallMarketplaceSync(store *plugin.Store, platList []platform.Platform,
 		pluginNames = []string{mp.Name}
 	}
 
+	// Use the original repo URL for CLI commands that need to reference the source
+	repoSource := mp.RepoURL
+
 	for _, platName := range targetPlatforms {
 		installType := platform.PluginInstallClass(platName)
 		if installType == platform.PluginInstallUnsupported {
@@ -1465,7 +1468,7 @@ func doInstallMarketplaceSync(store *plugin.Store, platList []platform.Platform,
 		// Use native CLI for platforms that support it (claude, copilot, hermes)
 		cli := platform.PlatformCLI(platName)
 		if cli != "" {
-			if err := platform.InstallMarketplaceViaCLI(platName, localPath, mp.Name, pluginNames); err != nil {
+			if err := platform.InstallMarketplaceViaCLI(platName, repoSource, localPath, mp.Name, pluginNames); err != nil {
 				return fmt.Errorf("installing to %s via CLI: %w", platName, err)
 			}
 			continue
