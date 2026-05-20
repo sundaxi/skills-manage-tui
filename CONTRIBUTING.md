@@ -12,7 +12,7 @@
 ### 快速开始
 
 ```bash
-git clone https://github.com/ying-sun1/skill-tui.git
+git clone https://github.com/sundaxi/skills-manage-tui.git
 cd skill-tui
 make build
 ```
@@ -34,7 +34,8 @@ cmd/             # Cobra 命令定义 — 参数解析 + 输出格式化
 internal/        # 核心业务逻辑（不对外暴露）
   config/        #   配置加载/保存
   skill/         #   Skill 模型 + Registry CRUD
-  platform/      #   平台检测 + 符号链接管理
+  platform/      #   平台检测 + 符号链接管理 + 插件 CLI 安装
+  plugin/        #   Plugin (Marketplace) 管理 — clone, scan, parse
   github/        #   GitHub API 客户端 + 导入器
   marketplace/   #   Marketplace 客户端 + 缓存
   collection/    #   技能集合存储
@@ -43,7 +44,7 @@ internal/        # 核心业务逻辑（不对外暴露）
   i18n/          #   国际化
   tui/           #   Bubbletea TUI
     styles/      #     主题 (Catppuccin)
-    components/  #     可复用 TUI 组件
+    components/  #     可复用 TUI 组件 (MultiSelect, Search, StatusBar)
 configs/         # 静态配置 (platforms.yaml, registry.json)
 ```
 

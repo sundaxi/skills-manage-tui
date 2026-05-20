@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-09
+
+### Added
+
+- **Plugin (Marketplace) 管理** — 完整的插件安装/卸载系统，通过 Plugin Tab 操作
+  - 从 GitHub 克隆 marketplace 仓库 (`a` 键添加)
+  - 多平台安装选择 (`i` 键)
+  - 一键卸载 (`u` 键) 和删除 (`x` 键)
+  - 插件平台矩阵 — 每个 marketplace 显示在各平台的安装状态 (✓/·)
+- **原生 CLI 安装** — 通过 `claude plugin` 和 `copilot plugin` 命令安装，确保完全兼容
+- **Hermes 适配器** — 为不兼容的 Hermes 插件系统生成适配文件 (plugin.yaml + __init__.py)
+- **状态栏消息** — install/uninstall/clone/delete 操作的彩色反馈 (✓ 绿色成功, ✗ 红色错误)
+- **安装进度提示** — 安装过程中显示 "Installing... please wait" 覆盖层
+- **`plugins_path` 配置** — 可自定义 marketplace 克隆目录
+- **`commands_dir` 平台字段** — 支持平台自定义命令目录
+
+### Changed
+
+- Tab 结构: Collections → Plugin (第三个 Tab 变更为 Plugin 管理)
+- 插件安装方式从手动文件写入改为原生 CLI 命令
+- Clone timeout 增至 300 秒，支持大型 repo (如 ECC ~16MB)
+- macOS 大小写不敏感文件系统保护 — 两步重命名防止误删
+
+### Fixed
+
+- 修复 SSH host key 验证失败 — 使用本地路径替代远程 URL
+- 修复 clone timeout — 增加超时时间 + 部分 clone 清理
+- 修复 macOS APFS 大小写冲突 — `strings.EqualFold` + temp 重命名
+- 修复 Copilot 插件检测 — 检查 `installed-plugins/` 目录
+- 修复 Claude 插件检测 — 检查 `installed_plugins.json`
+- 修复 `extraKnownMarketplaces` 未写入 `settings.json`
+
+### Removed
+
+- 9 个死代码函数 (UnsymlinkPlugin, RecordInstalledPlugins 等)
+- 旧 `test_copilot_install.go` 测试脚本
+
 ## [0.2.0] - 2025-07-17
 
 ### Added

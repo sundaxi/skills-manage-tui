@@ -91,10 +91,20 @@ Skill 内容...
 ### internal/platform/ — 平台管理
 
 ```
-platform.go     Platform struct { Name, Category, SkillsDir, Installed }
+platform.go     Platform struct { Name, Category, SkillsDir, CommandsDir, MarketplacesDir, Installed }
                 ListPlatforms() — 加载所有平台定义
                 DetectInstalled() — 自动检测目录存在性
                 FindPlatform() — 按名称查找
+                PluginInstallClass() — 返回平台的插件安装类型
+                IsPluginInstalled() — 检测插件是否已安装 (平台感知)
+
+platform_cli.go PlatformCLI() — 返回平台 CLI 命令名
+                AddMarketplaceViaCLI() — 添加 marketplace 到平台
+                InstallPluginViaCLI() — 通过 CLI 安装插件
+                UninstallPluginViaCLI() — 通过 CLI 卸载插件
+                InstallMarketplaceViaCLI() — 完整 marketplace 安装流程
+                UninstallMarketplaceViaCLI() — 完整卸载流程
+                hermesCreatePluginDir() — Hermes 适配器: 创建兼容目录结构
 
 linker.go       Install() — 创建符号链接 (platform_dir/skill_name → agents_dir/skill_name)
                 Uninstall() — 删除符号链接
@@ -103,7 +113,7 @@ linker.go       Install() — 创建符号链接 (platform_dir/skill_name → ag
                 BrokenLinks() — 检测断裂的符号链接
 ```
 
-**符号链接策略：**
+**符号链接策略 (Skills)：**
 
 ```
 源 (中央库)                      目标 (平台目录)
@@ -112,10 +122,27 @@ linker.go       Install() — 创建符号链接 (platform_dir/skill_name → ag
                               →  ~/.copilot/skills/my-skill (symlink)
 ```
 
-- 每个 skill 是中央库中的一个目录
-- 安装 = 在平台 skills 目录创建指向中央库的 symlink
-- 卸载 = 删除 symlink
-- sync = 确保 symlink 与中央库一致
+**插件安装策略 (Plugins)：**
+
+```
+插件安装类型:
+  PluginInstallClaude  → CLI: claude plugin marketplace add + install
+  PluginInstallCopilot → CLI: copilot plugin marketplace add + install
+  PluginInstallHermes  → 适配器: plugin.yaml + __init__.py + hermes plugins enable
+  PluginInstallSymlinkOnly → 仅 skills 目录 symlink (其他平台)
+```
+
+### internal/plugin/ — 插件管理
+
+```
+plugin.go       Store struct — 管理 plugins_path 下的 marketplace 克隆
+                NewStore() — 初始化 Store
+                ScanMarketplaces() — 扫描所有已 clone 的 marketplace
+                AddByRepo() — 从 GitHub URL 克隆 marketplace
+                RemoveMarketplace() — 删除 marketplace
+                CloneRepo() — 带 timeout 的 git clone (300s)
+                ParseMarketplace() — 解析 .claude-plugin/marketplace.json
+```
 
 ### internal/config/ — 配置管理
 
@@ -138,11 +165,12 @@ defaults.go     loadDefaultPlatforms() — 从 configs/platforms.yaml 加载
 
 ```
 app.go          AppModel — bubbletea 主模型
-                4 Tab 页路由 (Skills/Marketplace/Collections/Settings)
-                3 视图状态 (List/Detail/PlatformSelect)
+                4 Tab 页路由 (Skills/Marketplace/Plugin/Settings)
+                7 视图状态 (List/Detail/PlatformSelect/PluginDetail/PluginInstall/PluginAdd/Settings)
                 全局快捷键处理
                 搜索过滤逻辑
                 鼠标事件处理 (单击/双击)
+                插件 install/uninstall 异步操作 + 状态消息
 
 styles/theme.go Theme struct — Catppuccin Mocha/Latte 调色板
                 NewTheme() — 按名称创建主题
@@ -152,7 +180,7 @@ styles/theme.go Theme struct — Catppuccin Mocha/Latte 调色板
 
 components/     multiselect.go — 通用多选组件 (Space/a/j/k)
                 search.go — 搜索输入框 (bubbles/textinput)
-                statusbar.go — 底部状态栏
+                statusbar.go — 底部状态栏 (含 error/success 消息)
 ```
 
 **TUI 状态机：**
@@ -344,11 +372,16 @@ skill-tui/
 │   │   ├── skill.go                 # Skill struct + Registry CRUD
 │   │   └── metadata.go              # SKILL.md frontmatter 解析
 │   ├── platform/                    # 平台管理
-│   │   ├── platform.go              # Platform struct + 检测
+│   │   ├── platform.go              # Platform struct + 检测 + 插件类型
+│   │   ├── platform_cli.go          # CLI 安装/卸载 + Hermes 适配器
+│   │   ├── platform_test.go         # 平台安装格式测试
 │   │   └── linker.go                # 符号链接操作
 │   ├── github/                      # GitHub 集成
 │   │   ├── client.go                # REST API v3 客户端
 │   │   └── importer.go              # 仓库导入逻辑
+│   ├── plugin/                      # 插件 (Marketplace) 管理
+│   │   ├── plugin.go                # Store + clone + scan + parse
+│   │   └── marketplace_test.go      # 解析测试
 │   ├── marketplace/                 # Marketplace
 │   │   ├── client.go                # Registry 客户端 + 搜索
 │   │   └── cache.go                 # 内存缓存
