@@ -347,3 +347,139 @@ func TestEnablePluginInSettingsCreatesFile(t *testing.T) {
 		t.Errorf("plugin key %q = %v, want true", key, val)
 	}
 }
+
+// TestMultiPluginMarketplace simulates installing a marketplace like obra/superpowers-marketplace
+// that contains multiple plugins, each with an external source URL (separate repos).
+// Tests both Claude Code and Copilot install paths.
+func TestMultiPluginMarketplace(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Simulate 3 plugins from different repos (already "cloned" by ResolvePluginDir)
+	pluginDirs := map[string]string{}
+	for _, name := range []string{"superpowers", "episodic-memory", "elements-of-style"} {
+		dir := filepath.Join(tmpDir, "resolved", name)
+		os.MkdirAll(filepath.Join(dir, ".claude-plugin"), 0755)
+		os.MkdirAll(filepath.Join(dir, "skills", "test-skill"), 0755)
+		os.WriteFile(filepath.Join(dir, ".claude-plugin", "plugin.json"),
+			[]byte(`{"name":"`+name+`","version":"1.0.0"}`), 0644)
+		os.WriteFile(filepath.Join(dir, "skills", "test-skill", "SKILL.md"),
+			[]byte("---\nname: test\n---\nTest skill"), 0644)
+		pluginDirs[name] = dir
+	}
+
+	plugins := []PluginPathInfo{
+		{Name: "superpowers", Path: ".", SourceDir: pluginDirs["superpowers"]},
+		{Name: "episodic-memory", Path: ".", SourceDir: pluginDirs["episodic-memory"]},
+		{Name: "elements-of-style", Path: ".", SourceDir: pluginDirs["elements-of-style"]},
+	}
+
+	t.Run("Claude", func(t *testing.T) {
+		claudeDir := filepath.Join(tmpDir, "claude")
+		marketplacesDir := filepath.Join(claudeDir, "plugins", "marketplaces")
+
+		err := InstallPluginToPlatform(
+			marketplacesDir, "superpowers-marketplace", "obra/superpowers-marketplace",
+			plugins, filepath.Join(tmpDir, "resolved"), "", "abcdef123456789",
+		)
+		if err != nil {
+			t.Fatalf("InstallPluginToPlatform failed: %v", err)
+		}
+
+		// Verify all 3 plugins cached
+		for _, name := range []string{"superpowers", "episodic-memory", "elements-of-style"} {
+			cacheDir := filepath.Join(claudeDir, "plugins", "cache", "superpowers-marketplace", name, "abcdef123456")
+			if _, err := os.Stat(filepath.Join(cacheDir, ".claude-plugin", "plugin.json")); err != nil {
+				t.Errorf("Claude cache missing for %s: %v", name, err)
+			}
+		}
+
+		// Verify installed_plugins.json has all 3
+		ipData, _ := os.ReadFile(filepath.Join(claudeDir, "plugins", "installed_plugins.json"))
+		var ipFile InstalledPluginsFile
+		json.Unmarshal(ipData, &ipFile)
+		for _, name := range []string{"superpowers", "episodic-memory", "elements-of-style"} {
+			key := "superpowers-marketplace@" + name
+			if _, ok := ipFile.Plugins[key]; !ok {
+				t.Errorf("missing plugin %s in installed_plugins.json", key)
+			}
+		}
+
+		// Verify settings.json enabledPlugins
+		settingsData, _ := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+		var settings map[string]interface{}
+		json.Unmarshal(settingsData, &settings)
+		ep, _ := settings["enabledPlugins"].(map[string]interface{})
+		for _, name := range []string{"superpowers", "episodic-memory", "elements-of-style"} {
+			key := "superpowers-marketplace@" + name
+			if ep[key] != true {
+				t.Errorf("enabledPlugins missing %s", key)
+			}
+		}
+	})
+
+	t.Run("Copilot", func(t *testing.T) {
+		copilotDir := filepath.Join(tmpDir, "copilot")
+		skillsDir := filepath.Join(copilotDir, "skills")
+		os.MkdirAll(skillsDir, 0755)
+
+		// Create empty config.json
+		configPath := filepath.Join(copilotDir, "config.json")
+		os.WriteFile(configPath, []byte(copilotConfigHeader+`{"installedPlugins":[]}`+"\n"), 0644)
+
+		err := InstallPluginToCopilot(
+			skillsDir, "superpowers-marketplace", "obra/superpowers-marketplace",
+			plugins, filepath.Join(tmpDir, "resolved"), "", "abcdef123456789",
+		)
+		if err != nil {
+			t.Fatalf("InstallPluginToCopilot failed: %v", err)
+		}
+
+		// Verify all 3 plugins in installed-plugins/
+		for _, name := range []string{"superpowers", "episodic-memory", "elements-of-style"} {
+			destDir := filepath.Join(copilotDir, "installed-plugins", "superpowers-marketplace", name)
+			if _, err := os.Stat(filepath.Join(destDir, ".claude-plugin", "plugin.json")); err != nil {
+				t.Errorf("Copilot installed-plugins missing for %s: %v", name, err)
+			}
+		}
+
+		// Verify config.json has installedPlugins with all 3
+		config, header := loadCopilotConfig(configPath)
+		if !strings.Contains(header, "//") {
+			t.Error("config.json header lost")
+		}
+		ipList, _ := config["installedPlugins"].([]interface{})
+		if len(ipList) != 3 {
+			t.Fatalf("expected 3 installed plugins in config.json, got %d", len(ipList))
+		}
+		found := map[string]bool{}
+		for _, p := range ipList {
+			m := p.(map[string]interface{})
+			found[m["name"].(string)] = true
+			if m["marketplace"] != "superpowers-marketplace" {
+				t.Errorf("wrong marketplace: %v", m["marketplace"])
+			}
+		}
+		for _, name := range []string{"superpowers", "episodic-memory", "elements-of-style"} {
+			if !found[name] {
+				t.Errorf("config.json missing plugin %s", name)
+			}
+		}
+
+		// Verify settings.json has enabledPlugins but NOT installedPlugins
+		settingsData, _ := os.ReadFile(filepath.Join(copilotDir, "settings.json"))
+		var settings map[string]interface{}
+		json.Unmarshal(settingsData, &settings)
+
+		if _, has := settings["installedPlugins"]; has {
+			t.Error("settings.json should NOT have installedPlugins")
+		}
+
+		ep, _ := settings["enabledPlugins"].(map[string]interface{})
+		for _, name := range []string{"superpowers", "episodic-memory", "elements-of-style"} {
+			key := "superpowers-marketplace@" + name
+			if ep[key] != true {
+				t.Errorf("settings.json enabledPlugins missing %s", key)
+			}
+		}
+	})
+}
