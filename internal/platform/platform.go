@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -31,6 +32,9 @@ const (
 	// PluginInstallCopilot uses Claude-compatible flow with additional settings.json fields.
 	PluginInstallCopilot PluginInstallType = "copilot-native"
 
+	// PluginInstallHermes uses hermes's native plugin system (hermes plugins install/remove).
+	PluginInstallHermes PluginInstallType = "hermes-native"
+
 	// PluginInstallUnsupported means this platform has its own incompatible plugin system.
 	PluginInstallUnsupported PluginInstallType = "unsupported"
 
@@ -46,7 +50,7 @@ func PluginInstallClass(name string) PluginInstallType {
 	case "copilot":
 		return PluginInstallCopilot
 	case "hermes":
-		return PluginInstallClaude
+		return PluginInstallHermes
 	default:
 		return PluginInstallSymlinkOnly
 	}
@@ -105,6 +109,7 @@ func dirExists(path string) bool {
 // IsPluginInstalled checks if a plugin/marketplace is installed on a platform.
 // For Copilot, checks installed-plugins/<marketplace>/<plugin>/ exists.
 // For Claude, checks installed_plugins.json for the plugin entry.
+// For Hermes, runs hermes plugins list and checks output.
 // For others, checks if cache/<name>/ directory exists.
 func IsPluginInstalled(p Platform, pluginName string) bool {
 	installType := PluginInstallClass(p.Name)
@@ -128,6 +133,10 @@ func IsPluginInstalled(p Platform, pluginName string) bool {
 		key := pluginName + "@" + pluginName
 		return strings.Contains(string(data), `"`+key+`"`)
 
+	case PluginInstallHermes:
+		// Hermes: check hermes plugins list output for the plugin name
+		return hermesPluginInstalled(pluginName)
+
 	default:
 		// Other platforms: check cache/<name>/ directory exists
 		cacheDir := filepath.Join(filepath.Dir(p.MarketplacesDir), "cache", pluginName)
@@ -139,6 +148,27 @@ func IsPluginInstalled(p Platform, pluginName string) bool {
 		_, err := os.Stat(dirPath)
 		return err == nil
 	}
+}
+
+// hermesPluginInstalled checks if a plugin is installed in hermes by running
+// `hermes plugins list` and checking for the plugin name in the output.
+func hermesPluginInstalled(pluginName string) bool {
+	cmd := exec.Command("hermes", "plugins", "list")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false
+	}
+	// hermes plugins list outputs a table with plugin names in the first column
+	for _, line := range strings.Split(string(output), "\n") {
+		// Look for the plugin name as a word boundary in the table
+		fields := strings.Fields(line)
+		for _, f := range fields {
+			if strings.EqualFold(f, pluginName) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SymlinkPlugin creates a symlink from marketplacesDir/pluginName → sourceDir.

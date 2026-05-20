@@ -314,7 +314,7 @@ func TestPluginInstallClass(t *testing.T) {
 	}{
 		{"claude-code", PluginInstallClaude},
 		{"copilot", PluginInstallCopilot},
-		{"hermes", PluginInstallClaude},
+		{"hermes", PluginInstallHermes},
 		{"cursor", PluginInstallSymlinkOnly},
 		{"windsurf", PluginInstallSymlinkOnly},
 	}
