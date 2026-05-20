@@ -144,6 +144,19 @@ func TestInstallPluginToPlatform(t *testing.T) {
 	if _, ok := km["test-mp"]; !ok {
 		t.Fatalf("marketplace not in known_marketplaces.json")
 	}
+
+	// Verify settings.json has enabledPlugins + extraKnownMarketplaces
+	settingsData, _ := os.ReadFile(filepath.Join(tmpDir, "settings.json"))
+	var settings map[string]interface{}
+	json.Unmarshal(settingsData, &settings)
+	ep, _ := settings["enabledPlugins"].(map[string]interface{})
+	if ep["test-mp@my-plugin"] != true {
+		t.Errorf("enabledPlugins missing test-mp@my-plugin")
+	}
+	ekm, _ := settings["extraKnownMarketplaces"].(map[string]interface{})
+	if ekm["test-mp"] == nil {
+		t.Errorf("extraKnownMarketplaces missing test-mp")
+	}
 }
 
 func TestInstallPluginToCopilot(t *testing.T) {

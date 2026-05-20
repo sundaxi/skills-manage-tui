@@ -561,11 +561,40 @@ func InstallPluginToPlatform(marketplacesDir, marketplaceName, repoRef string, p
 		}
 	}
 
-	// Enable in settings.json
+	// Enable in settings.json (enabledPlugins + extraKnownMarketplaces)
+	pluginsDir := pluginsBaseDir(marketplacesDir)
+	platformRoot := filepath.Dir(pluginsDir)
+	settingsPath := filepath.Join(platformRoot, "settings.json")
+	settings := loadSettingsFile(settingsPath)
+
 	for _, pi := range plugins {
 		key := marketplaceName + "@" + pi.Name
-		EnablePluginInSettings(marketplacesDir, key)
+		enabled, _ := settings["enabledPlugins"].(map[string]interface{})
+		if enabled == nil {
+			enabled = make(map[string]interface{})
+		}
+		enabled[key] = true
+		settings["enabledPlugins"] = enabled
 	}
+
+	if repoRef != "" {
+		known, _ := settings["extraKnownMarketplaces"].(map[string]interface{})
+		if known == nil {
+			known = make(map[string]interface{})
+		}
+		parts := strings.SplitN(repoRef, "/", 2)
+		if len(parts) == 2 {
+			known[marketplaceName] = map[string]interface{}{
+				"source": map[string]interface{}{
+					"source": "github",
+					"repo":   repoRef,
+				},
+			}
+		}
+		settings["extraKnownMarketplaces"] = known
+	}
+
+	saveSettingsFile(settingsPath, settings)
 
 	return nil
 }
