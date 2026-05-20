@@ -617,8 +617,57 @@ func CopilotSettingsPath(skillsDir string) string {
 	return filepath.Join(parent, "settings.json")
 }
 
-// InstallPluginToCopilot copies plugin files and updates Copilot's settings.json.
-// Copilot stores plugins at installed-plugins/<marketplace>/<plugin>/ and metadata in settings.json.
+// CopilotConfigPath returns the path to Copilot's config.json (auto-managed).
+func CopilotConfigPath(skillsDir string) string {
+	parent := filepath.Dir(filepath.Clean(skillsDir))
+	return filepath.Join(parent, "config.json")
+}
+
+// loadCopilotConfig reads Copilot's config.json which has comment lines before the JSON.
+// Returns the parsed JSON content and the comment header lines.
+func loadCopilotConfig(path string) (map[string]interface{}, string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return make(map[string]interface{}), copilotConfigHeader
+	}
+
+	content := string(data)
+	// Find the first '{' — everything before it is comment header
+	idx := strings.Index(content, "{")
+	if idx < 0 {
+		return make(map[string]interface{}), copilotConfigHeader
+	}
+
+	header := content[:idx]
+	jsonPart := content[idx:]
+
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonPart), &config); err != nil {
+		return make(map[string]interface{}), header
+	}
+	return config, header
+}
+
+const copilotConfigHeader = "// User settings belong in settings.json.\n// This file is managed automatically.\n"
+
+// saveCopilotConfig writes Copilot's config.json preserving the comment header.
+func saveCopilotConfig(path string, config map[string]interface{}, header string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("creating config dir: %w", err)
+	}
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(header+string(data)+"\n"), 0644)
+}
+
+// InstallPluginToCopilot copies plugin files and updates Copilot's config.json + settings.json.
+// Copilot stores:
+//   - Plugin files at installed-plugins/<marketplace>/<plugin>/
+//   - Install records in config.json → installedPlugins[]
+//   - Enable flags in settings.json → enabledPlugins{} + extraKnownMarketplaces{}
 func InstallPluginToCopilot(skillsDir, marketplaceName, repoRef string, plugins []PluginPathInfo, sourceDir, version, gitSha string) error {
 	absSource, _ := filepath.Abs(sourceDir)
 
@@ -629,23 +678,30 @@ func InstallPluginToCopilot(skillsDir, marketplaceName, repoRef string, plugins 
 
 	installedDir := CopilotInstalledPluginsDir(skillsDir)
 	dataDir := filepath.Join(filepath.Dir(filepath.Clean(skillsDir)), "plugin-data")
+	configPath := CopilotConfigPath(skillsDir)
 	settingsPath := CopilotSettingsPath(skillsDir)
 	now := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 
-	settings := loadSettingsFile(settingsPath)
+	// Load config.json for installedPlugins
+	config, header := loadCopilotConfig(configPath)
 
 	// Build lookup of existing installedPlugins by marketplace/name
-	existingPlugins, _ := settings["installedPlugins"].([]interface{})
+	existingPlugins, _ := config["installedPlugins"].([]interface{})
 	pluginMap := make(map[string]map[string]interface{})
 	for _, p := range existingPlugins {
 		if m, ok := p.(map[string]interface{}); ok {
-			key := m["marketplace"].(string) + "/" + m["name"].(string)
-			pluginMap[key] = m
+			mp, _ := m["marketplace"].(string)
+			name, _ := m["name"].(string)
+			if mp != "" && name != "" {
+				pluginMap[mp+"/"+name] = m
+			}
 		}
 	}
 
+	// Load settings.json for enabledPlugins + extraKnownMarketplaces
+	settings := loadSettingsFile(settingsPath)
+
 	for _, pi := range plugins {
-		// Determine the actual plugin source directory
 		pluginSourceDir := resolvePluginSourceDir(pi, absSource)
 
 		// Copy to installed-plugins/<marketplace>/<plugin>/
@@ -657,26 +713,22 @@ func InstallPluginToCopilot(skillsDir, marketplaceName, repoRef string, plugins 
 			return fmt.Errorf("copying plugin to copilot: %w", err)
 		}
 
-		// Symlink individual skills to Copilot's skills/ directory
-		copilotSkillsDir := filepath.Clean(skillsDir)
-		symlinkPluginSkills(pluginSourceDir, copilotSkillsDir)
-
 		// Create empty plugin-data dir
 		pdDir := filepath.Join(dataDir, marketplaceName, pi.Name)
 		os.MkdirAll(pdDir, 0755)
 
-		// Update installedPlugins entry
+		// Update installedPlugins entry in config.json
 		key := marketplaceName + "/" + pi.Name
 		pluginMap[key] = map[string]interface{}{
-			"cache_path":   destDir,
-			"marketplace":  marketplaceName,
 			"name":         pi.Name,
+			"marketplace":  marketplaceName,
 			"version":      shortVersion,
-			"enabled":      true,
 			"installed_at": now,
+			"enabled":      true,
+			"cache_path":   destDir,
 		}
 
-		// Update enabledPlugins map
+		// Update enabledPlugins in settings.json
 		epKey := marketplaceName + "@" + pi.Name
 		enabled, _ := settings["enabledPlugins"].(map[string]interface{})
 		if enabled == nil {
@@ -686,13 +738,18 @@ func InstallPluginToCopilot(skillsDir, marketplaceName, repoRef string, plugins 
 		settings["enabledPlugins"] = enabled
 	}
 
+	// Write installedPlugins to config.json
 	var newPlugins []interface{}
 	for _, p := range pluginMap {
 		newPlugins = append(newPlugins, p)
 	}
-	settings["installedPlugins"] = newPlugins
+	config["installedPlugins"] = newPlugins
 
-	// Update extraKnownMarketplaces
+	if err := saveCopilotConfig(configPath, config, header); err != nil {
+		return fmt.Errorf("saving copilot config.json: %w", err)
+	}
+
+	// Update extraKnownMarketplaces in settings.json
 	if repoRef != "" {
 		known, _ := settings["extraKnownMarketplaces"].(map[string]interface{})
 		if known == nil {
@@ -714,24 +771,15 @@ func InstallPluginToCopilot(skillsDir, marketplaceName, repoRef string, plugins 
 func UninstallPluginFromCopilot(skillsDir, marketplaceName string, plugins []PluginPathInfo) error {
 	installedDir := CopilotInstalledPluginsDir(skillsDir)
 	dataDir := filepath.Join(filepath.Dir(filepath.Clean(skillsDir)), "plugin-data")
+	configPath := CopilotConfigPath(skillsDir)
 	settingsPath := CopilotSettingsPath(skillsDir)
-	copilotSkillsDir := filepath.Clean(skillsDir)
 
 	os.RemoveAll(filepath.Join(installedDir, marketplaceName))
 	os.RemoveAll(filepath.Join(dataDir, marketplaceName))
 
-	// Remove skill symlinks that were created from this plugin
-	for _, pi := range plugins {
-		pluginSourceDir := resolvePluginSourceDir(pi, "")
-		if pluginSourceDir != "" {
-			unlinkPluginSkills(pluginSourceDir, copilotSkillsDir)
-		}
-	}
-
-	settings := loadSettingsFile(settingsPath)
-
-	// Remove from installedPlugins array
-	existingPlugins, _ := settings["installedPlugins"].([]interface{})
+	// Remove from config.json → installedPlugins[]
+	config, header := loadCopilotConfig(configPath)
+	existingPlugins, _ := config["installedPlugins"].([]interface{})
 	var newPlugins []interface{}
 	for _, p := range existingPlugins {
 		if m, ok := p.(map[string]interface{}); ok {
@@ -741,16 +789,20 @@ func UninstallPluginFromCopilot(skillsDir, marketplaceName string, plugins []Plu
 		}
 		newPlugins = append(newPlugins, p)
 	}
-	settings["installedPlugins"] = newPlugins
+	config["installedPlugins"] = newPlugins
+	if err := saveCopilotConfig(configPath, config, header); err != nil {
+		return fmt.Errorf("saving copilot config.json: %w", err)
+	}
 
-	// Remove from extraKnownMarketplaces
+	// Remove from settings.json → enabledPlugins + extraKnownMarketplaces
+	settings := loadSettingsFile(settingsPath)
+
 	known, _ := settings["extraKnownMarketplaces"].(map[string]interface{})
 	if known != nil {
 		delete(known, marketplaceName)
+		settings["extraKnownMarketplaces"] = known
 	}
-	settings["extraKnownMarketplaces"] = known
 
-	// Remove from enabledPlugins
 	enabled, _ := settings["enabledPlugins"].(map[string]interface{})
 	prefix := marketplaceName + "@"
 	for k := range enabled {

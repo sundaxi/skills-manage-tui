@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ying-sun1/skill-tui/internal/config"
 	"github.com/ying-sun1/skill-tui/internal/platform"
+	"github.com/ying-sun1/skill-tui/internal/plugin"
 	"github.com/ying-sun1/skill-tui/internal/skill"
 	"github.com/ying-sun1/skill-tui/internal/tui/components"
 	"github.com/ying-sun1/skill-tui/internal/tui/styles"
@@ -23,11 +27,21 @@ type tab int
 const (
 	tabSkills tab = iota
 	tabMarketplace
-	tabCollections
+	tabPlugin
 	tabSettings
 )
 
-var tabNames = []string{"Skills", "Marketplace", "Collections", "Settings"}
+var tabNames = []string{"Skills", "Marketplace", "Plugin", "Settings"}
+
+type marketplaceClonedMsg struct {
+	marketplace *plugin.Marketplace
+	err         error
+}
+
+type marketplaceInstalledMsg struct {
+	marketplace *plugin.Marketplace
+	err         error
+}
 
 type view int
 
@@ -36,6 +50,9 @@ const (
 	viewDetail
 	viewPlatformSelect
 	viewDetailPlatformSelect
+	viewPluginDetail
+	viewPluginInstall
+	viewPluginAdd
 )
 
 type AppModel struct {
@@ -58,6 +75,15 @@ type AppModel struct {
 	detailSkill *skill.Skill
 	fullContent bool
 
+	marketplaces      []plugin.Marketplace
+	pluginStore       *plugin.Store
+	pluginCursor      int
+	pluginScroll      int
+	pluginSelected    map[string]bool
+	detailMarketplace *plugin.Marketplace
+	pluginAddInput    textinput.Model
+	pluginCloning     bool
+
 	search    components.SearchModel
 	statusBar components.StatusBar
 	multiSel  components.MultiSelectModel
@@ -79,6 +105,7 @@ const (
 	settingTheme = iota
 	settingAccent
 	settingSkillsPath
+	settingPluginsPath
 	settingsCount
 )
 
@@ -96,19 +123,26 @@ func NewApp(cfg *config.Config) AppModel {
 		}
 	}
 
+	home, _ := os.UserHomeDir()
+	configDir := filepath.Join(home, ".skill-tui")
+	pluginStore := plugin.NewStore(configDir, cfg.PluginsPath)
+
 	search := components.NewSearch(theme)
 
 	app := AppModel{
-		cfg:         cfg,
-		theme:       theme,
-		registry:    registry,
-		tabs:        tabNames,
-		selected:    make(map[string]bool),
-		platforms:   platforms,
-		platformMap: platformMap,
-		search:      search,
+		cfg:            cfg,
+		theme:          theme,
+		registry:       registry,
+		tabs:           tabNames,
+		selected:       make(map[string]bool),
+		platforms:      platforms,
+		platformMap:    platformMap,
+		search:         search,
+		pluginStore:    pluginStore,
+		pluginSelected: make(map[string]bool),
 	}
 	app.loadSkills()
+	app.loadPlugins()
 	return app
 }
 
@@ -118,6 +152,25 @@ func (m AppModel) Init() tea.Cmd {
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case marketplaceClonedMsg:
+		m.pluginCloning = false
+		m.currentView = viewList
+		if msg.err != nil {
+			m.err = msg.err
+		}
+		m.loadPlugins()
+		return m, nil
+
+	case marketplaceInstalledMsg:
+		m.pluginCloning = false
+		m.currentView = viewList
+		m.detailMarketplace = nil
+		if msg.err != nil {
+			m.err = msg.err
+		}
+		m.loadPlugins()
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -195,6 +248,29 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.currentView == viewDetail {
 			return m.handleDetail(msg)
+		}
+
+		if m.currentView == viewPluginDetail {
+			return m.handleMarketplaceDetail(msg)
+		}
+
+		if m.currentView == viewPluginInstall {
+			return m.handleMarketplaceInstall(msg)
+		}
+
+		if m.currentView == viewPluginAdd {
+			if m.pluginCloning {
+				if msg.String() == "esc" {
+					m.pluginCloning = false
+					m.currentView = viewList
+				}
+				return m, nil
+			}
+			return m.handlePluginAdd(msg)
+		}
+
+		if m.activeTab == tabPlugin && m.currentView == viewList {
+			return m.handlePluginList(msg)
 		}
 
 		if m.activeTab == tabSettings {
@@ -317,8 +393,8 @@ func (m AppModel) renderContent() string {
 		return m.renderSkillsTab()
 	case tabMarketplace:
 		return m.theme.Dimmed.Render("\n  Marketplace — Coming soon...")
-	case tabCollections:
-		return m.theme.Dimmed.Render("\n  Collections — Coming soon...")
+	case tabPlugin:
+		return m.renderPluginTab()
 	case tabSettings:
 		return m.renderSettingsTab()
 	default:
@@ -554,6 +630,7 @@ func (m AppModel) renderSettingsTab() string {
 		{"Theme", m.cfg.Theme},
 		{"Accent Color", m.cfg.AccentColor},
 		{"Skills Path", m.cfg.SkillsPath},
+		{"Plugins Path", m.cfg.PluginsPath},
 	}
 
 	for i, item := range items {
@@ -564,7 +641,7 @@ func (m AppModel) renderSettingsTab() string {
 
 		label := m.theme.Accent.Render(fmt.Sprintf("%-14s", item.label))
 
-		if m.settingsEditing && i == m.settingsCursor && i == settingSkillsPath {
+		if m.settingsEditing && i == m.settingsCursor && (i == settingSkillsPath || i == settingPluginsPath) {
 			b.WriteString(fmt.Sprintf("%s%s %s\n", cursor, label, m.settingsInput.View()))
 		} else {
 			valStyle := m.theme.Normal
@@ -576,7 +653,7 @@ func (m AppModel) renderSettingsTab() string {
 				switch i {
 				case settingTheme, settingAccent:
 					hint = m.theme.Dimmed.Render("  ← Enter to cycle")
-				case settingSkillsPath:
+				case settingSkillsPath, settingPluginsPath:
 					hint = m.theme.Dimmed.Render("  ← Enter to edit")
 				}
 			}
@@ -608,7 +685,12 @@ func (m AppModel) handleSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.settingsEditing {
 		switch msg.String() {
 		case "enter":
-			m.cfg.SkillsPath = m.settingsInput.Value()
+			switch m.settingsCursor {
+			case settingSkillsPath:
+				m.cfg.SkillsPath = m.settingsInput.Value()
+			case settingPluginsPath:
+				m.cfg.PluginsPath = m.settingsInput.Value()
+			}
 			m.settingsEditing = false
 			m.settingsInput.Blur()
 			m.applyAndSaveSettings()
@@ -661,6 +743,16 @@ func (m AppModel) handleSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ti.TextStyle = m.theme.Normal
 			m.settingsInput = ti
 			m.settingsEditing = true
+		case settingPluginsPath:
+			ti := textinput.New()
+			ti.SetValue(m.cfg.PluginsPath)
+			ti.Focus()
+			ti.CharLimit = 200
+			ti.Width = 60
+			ti.PromptStyle = m.theme.Accent
+			ti.TextStyle = m.theme.Normal
+			m.settingsInput = ti
+			m.settingsEditing = true
 		}
 	}
 	return m, nil
@@ -669,6 +761,10 @@ func (m AppModel) handleSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *AppModel) applyAndSaveSettings() {
 	m.theme = styles.NewThemeWithAccent(m.cfg.Theme, m.cfg.AccentColor)
 	m.search = components.NewSearch(m.theme)
+	home, _ := os.UserHomeDir()
+	configDir := filepath.Join(home, ".skill-tui")
+	m.pluginStore = plugin.NewStore(configDir, m.cfg.PluginsPath)
+	m.loadPlugins()
 	_ = config.Save(m.cfg)
 }
 
@@ -679,18 +775,6 @@ func cycleOption(options []string, current string) string {
 		}
 	}
 	return options[0]
-}
-
-func (m AppModel) renderStatusBar() string {
-	m.statusBar = components.StatusBar{
-		Theme:      m.theme,
-		Width:      m.width,
-		SkillCount: len(m.skills),
-		Platforms:  len(m.platforms),
-		Path:       m.cfg.SkillsPath,
-		Tab:        m.tabs[m.activeTab],
-	}
-	return m.statusBar.View()
 }
 
 func (m *AppModel) loadSkills() {
@@ -902,4 +986,680 @@ func countByCategory(platforms []platform.Platform, cat string) int {
 		}
 	}
 	return count
+}
+
+func (m *AppModel) loadPlugins() {
+	local, err := m.pluginStore.ScanMarketplaces()
+	if err != nil {
+		local = nil
+	}
+
+	// try fetch remote registry
+	ctx, cancel := contextTimeout()
+	defer cancel()
+	remote, err := plugin.NewRegistryClient().FetchAvailable(ctx)
+	if err == nil {
+		local = plugin.MergeMarketplaces(local, remote)
+	}
+
+	m.marketplaces = local
+}
+
+func contextTimeout() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 5*time.Second)
+}
+
+func (m AppModel) renderPluginTab() string {
+	switch m.currentView {
+	case viewPluginDetail:
+		return m.renderPluginDetail()
+	case viewPluginInstall:
+		return m.multiSel.View()
+	case viewPluginAdd:
+		return m.renderPluginAdd()
+	default:
+		return m.renderPluginList()
+	}
+}
+
+func (m AppModel) renderPluginList() string {
+	var b strings.Builder
+
+	b.WriteString(m.theme.Title.Render("Plugins"))
+	b.WriteString(m.theme.Dimmed.Render("  " + m.pluginStore.PluginsDir()))
+	b.WriteString("  ")
+	b.WriteString(m.search.View())
+	b.WriteString("\n\n")
+
+	if len(m.marketplaces) == 0 {
+		b.WriteString(m.theme.Dimmed.Render("  No plugins found"))
+		b.WriteString("\n")
+		b.WriteString(m.theme.Dimmed.Render("  Press 'a' to add from GitHub  'r' to refresh from registry"))
+		return b.String()
+	}
+
+	var platCols []string
+	for _, p := range m.platforms {
+		if p.Category != "central" && p.Installed {
+			platCols = append(platCols, p.Name)
+		}
+	}
+	sort.Strings(platCols)
+
+	const nameWidth = 24
+	const colWidth = 8
+
+	header := fmt.Sprintf("     %-*s", nameWidth, "")
+	for _, p := range platCols {
+		header += fmt.Sprintf("%-*s", colWidth, abbreviatePlatform(p))
+	}
+	b.WriteString(m.theme.Subtitle.Render(header))
+	b.WriteString("\n")
+
+	sepLen := 5 + nameWidth + colWidth*len(platCols)
+	b.WriteString(m.theme.Dimmed.Render("  " + strings.Repeat("─", sepLen-2)))
+	b.WriteString("\n")
+
+	visible := m.visiblePluginRows()
+	start := m.pluginScroll
+	end := start + visible
+	if end > len(m.marketplaces) {
+		end = len(m.marketplaces)
+	}
+
+	for i := start; i < end; i++ {
+		mp := m.marketplaces[i]
+		cursor := " "
+		if i == m.pluginCursor {
+			cursor = m.theme.Cursor.Render(">")
+		}
+
+		var check string
+		switch mp.Status {
+		case "cloned":
+			check = m.theme.Success.Render("✓")
+		default:
+			check = m.theme.Dimmed.Render("·")
+		}
+
+		displayName := mp.Name
+		if len(displayName) > nameWidth-1 {
+			displayName = displayName[:nameWidth-4] + "..."
+		}
+
+		var nameStyled string
+		if i == m.pluginCursor {
+			nameStyled = m.theme.Selected.Render(fmt.Sprintf("%-*s", nameWidth, displayName))
+		} else {
+			nameStyled = m.theme.Normal.Render(fmt.Sprintf("%-*s", nameWidth, displayName))
+		}
+
+		var cols strings.Builder
+		for _, pl := range platCols {
+			isInstalled := false
+			for _, pp := range m.platforms {
+				if pp.Name == pl {
+					isInstalled = platform.IsPluginInstalled(pp.MarketplacesDir, mp.Name)
+					break
+				}
+			}
+			if isInstalled {
+				cols.WriteString(m.theme.Success.Render(fmt.Sprintf("%-*s", colWidth, "✓")))
+			} else {
+				cols.WriteString(m.theme.Dimmed.Render(fmt.Sprintf("%-*s", colWidth, "·")))
+			}
+		}
+
+		desc := ""
+		if mp.Description != "" {
+			d := mp.Description
+			if len(d) > 35 {
+				d = d[:32] + "..."
+			}
+			desc = m.theme.Dimmed.Render(d)
+		}
+
+		b.WriteString(fmt.Sprintf(" %s %s %s%s %s\n", cursor, check, nameStyled, cols.String(), desc))
+	}
+
+	if len(m.marketplaces) > visible {
+		b.WriteString(m.theme.Dimmed.Render(fmt.Sprintf("  ─── %d-%d / %d ───", start+1, end, len(m.marketplaces))))
+		b.WriteString("\n")
+	} else {
+		b.WriteString("\n")
+	}
+	b.WriteString(m.theme.Dimmed.Render("  ↑/k↓/j: navigate  a: add  i: install  u: uninstall  x: delete  Enter/d: detail  /: search  r: refresh"))
+
+	return b.String()
+}
+
+func (m AppModel) visiblePluginRows() int {
+	overhead := 8
+	rows := m.height - overhead
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
+}
+
+func (m AppModel) renderPluginDetail() string {
+	if m.detailMarketplace == nil {
+		return ""
+	}
+	mp := m.detailMarketplace
+	var b strings.Builder
+
+	b.WriteString(m.theme.Title.Render(mp.Name))
+	b.WriteString("\n")
+
+	if mp.Version != "" {
+		b.WriteString(m.theme.Accent.Render("Version: "))
+		b.WriteString(m.theme.Normal.Render(mp.Version))
+		b.WriteString("  ")
+	}
+	if mp.Author != "" {
+		b.WriteString(m.theme.Accent.Render("Author: "))
+		b.WriteString(m.theme.Normal.Render(mp.Author))
+		b.WriteString("  ")
+	}
+	if mp.RepoURL != "" {
+		b.WriteString(m.theme.Accent.Render("Repo: "))
+		b.WriteString(m.theme.Normal.Render(mp.RepoURL))
+	}
+	if mp.Description != "" {
+		b.WriteString("\n")
+		b.WriteString(m.theme.Normal.Render(mp.Description))
+	}
+	b.WriteString("\n\n")
+
+	statusLabel := "Available"
+	statusStyle := m.theme.Dimmed
+	if mp.Status == "cloned" {
+		statusLabel = "Cloned"
+		statusStyle = m.theme.Success
+	}
+	b.WriteString(m.theme.Accent.Render("Status: "))
+	b.WriteString(statusStyle.Render(statusLabel))
+	b.WriteString("\n\n")
+
+	if len(mp.Tags) > 0 {
+		b.WriteString(m.theme.Subtitle.Render("Tags"))
+		b.WriteString("\n")
+		b.WriteString(m.theme.Dimmed.Render("  " + strings.Join(mp.Tags, ", ")))
+		b.WriteString("\n\n")
+	}
+
+	// Show plugins contained in this marketplace
+	if len(mp.Plugins) > 0 {
+		b.WriteString(m.theme.Subtitle.Render(fmt.Sprintf("Plugins (%d)", len(mp.Plugins))))
+		b.WriteString("\n")
+		for _, pi := range mp.Plugins {
+			b.WriteString(m.theme.Normal.Render("  • "))
+			b.WriteString(m.theme.Normal.Render(pi.Name))
+			if pi.Description != "" {
+				b.WriteString(m.theme.Dimmed.Render(" - " + pi.Description))
+			}
+			b.WriteString("\n")
+			if len(pi.Commands) > 0 {
+				b.WriteString(m.theme.Dimmed.Render("    Commands: " + strings.Join(pi.Commands, ", ")))
+				b.WriteString("\n")
+			}
+			if len(pi.Skills) > 0 {
+				b.WriteString(m.theme.Dimmed.Render("    Skills: " + strings.Join(pi.Skills, ", ")))
+				b.WriteString("\n")
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	// Show which platforms this marketplace is installed to
+	var installedPlatforms []string
+	for _, pl := range m.platforms {
+		if pl.Category == "central" {
+			continue
+		}
+		if platform.IsPluginInstalled(pl.MarketplacesDir, mp.Name) {
+			installedPlatforms = append(installedPlatforms, pl.Name)
+		}
+	}
+	if len(installedPlatforms) > 0 {
+		b.WriteString(m.theme.Subtitle.Render("Installed Platforms"))
+		b.WriteString("\n")
+		for _, ip := range installedPlatforms {
+			b.WriteString(m.theme.Success.Render("  ✓ "))
+			b.WriteString(m.theme.Normal.Render(ip))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(m.theme.Dimmed.Render("  Esc: back  i: install to platforms  u: uninstall  x: delete"))
+
+	return b.String()
+}
+
+func (m AppModel) handlePluginList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "1", "2", "3", "4":
+		idx := int(msg.String()[0] - '1')
+		if idx < len(m.tabs) {
+			m.activeTab = tab(idx)
+			m.currentView = viewList
+		}
+	case "tab":
+		m.activeTab = (m.activeTab + 1) % tab(len(m.tabs))
+		m.currentView = viewList
+	case "up", "k":
+		if m.pluginCursor > 0 {
+			m.pluginCursor--
+		}
+		m.adjustPluginScroll()
+	case "down", "j":
+		if m.pluginCursor < len(m.marketplaces)-1 {
+			m.pluginCursor++
+		}
+		m.adjustPluginScroll()
+	case " ":
+		if len(m.marketplaces) > 0 {
+			name := m.marketplaces[m.pluginCursor].Name
+			m.pluginSelected[name] = !m.pluginSelected[name]
+		}
+	case "enter", "d":
+		if len(m.marketplaces) > 0 {
+			mp := m.marketplaces[m.pluginCursor]
+			m.detailMarketplace = &mp
+			m.currentView = viewPluginDetail
+		}
+	case "i":
+		if len(m.marketplaces) > 0 {
+			mp := m.marketplaces[m.pluginCursor]
+			m.showMarketplaceInstall(&mp)
+		}
+	case "x":
+		if len(m.marketplaces) > 0 {
+			m.deleteMarketplace(m.marketplaces[m.pluginCursor].Name)
+		}
+	case "u":
+		if len(m.marketplaces) > 0 {
+			m.uninstallPlatformLinks(m.marketplaces[m.pluginCursor].Name)
+		}
+	case "r":
+		m.loadPlugins()
+		m.pluginCursor = 0
+		m.pluginScroll = 0
+	case "a":
+		ti := textinput.New()
+		ti.Placeholder = "owner/repo (e.g. HKUDS/CLI-Anything)"
+		ti.Focus()
+		ti.CharLimit = 200
+		ti.Width = 50
+		ti.PromptStyle = m.theme.Accent
+		ti.TextStyle = m.theme.Normal
+		m.pluginAddInput = ti
+		m.currentView = viewPluginAdd
+	}
+	return m, nil
+}
+
+func (m *AppModel) adjustPluginScroll() {
+	visible := m.visiblePluginRows()
+	if m.pluginCursor < m.pluginScroll {
+		m.pluginScroll = m.pluginCursor
+	}
+	if m.pluginCursor >= m.pluginScroll+visible {
+		m.pluginScroll = m.pluginCursor - visible + 1
+	}
+	maxScroll := len(m.marketplaces) - visible
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.pluginScroll > maxScroll {
+		m.pluginScroll = maxScroll
+	}
+}
+
+func (m AppModel) handleMarketplaceDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "backspace":
+		m.currentView = viewList
+		m.detailMarketplace = nil
+	case "i":
+		if m.detailMarketplace != nil {
+			m.showMarketplaceInstall(m.detailMarketplace)
+		}
+	case "u":
+		if m.detailMarketplace != nil {
+			m.uninstallPlatformLinks(m.detailMarketplace.Name)
+			for i := range m.marketplaces {
+				if m.marketplaces[i].Name == m.detailMarketplace.Name {
+					mp := m.marketplaces[i]
+					m.detailMarketplace = &mp
+					break
+				}
+			}
+		}
+	case "x":
+		if m.detailMarketplace != nil {
+			m.deleteMarketplace(m.detailMarketplace.Name)
+			m.detailMarketplace = nil
+			m.currentView = viewList
+		}
+	}
+	return m, nil
+}
+
+func (m *AppModel) showMarketplaceInstall(mp *plugin.Marketplace) {
+	var items []components.MultiSelectItem
+	for _, pl := range m.platforms {
+		if pl.Category == "central" || !pl.Installed {
+			continue
+		}
+		items = append(items, components.MultiSelectItem{
+			Key:   pl.Name,
+			Label: pl.Name,
+			Desc:  pl.MarketplacesDir,
+		})
+	}
+	if len(items) == 0 {
+		return
+	}
+	m.detailMarketplace = mp
+	m.multiSel = components.NewMultiSelect(m.theme, fmt.Sprintf("Install %s to:", mp.Name), items)
+	m.currentView = viewPluginInstall
+}
+
+func (m AppModel) handleMarketplaceInstall(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.multiSel, cmd = m.multiSel.Update(msg)
+
+	if msg.String() == "enter" {
+		selected := m.multiSel.Selected()
+		if m.detailMarketplace != nil && len(selected) > 0 {
+			m.pluginCloning = true
+			mp := *m.detailMarketplace
+			store := m.pluginStore
+
+			platList := m.platforms
+			return m, func() tea.Msg {
+				err := doInstallMarketplaceSync(store, platList, &mp, selected)
+				return marketplaceInstalledMsg{marketplace: &mp, err: err}
+			}
+		}
+		m.currentView = viewList
+		m.detailMarketplace = nil
+		return m, nil
+	}
+
+	if msg.String() == "esc" {
+		m.currentView = viewPluginDetail
+		return m, nil
+	}
+
+	return m, cmd
+}
+
+func doInstallMarketplaceSync(store *plugin.Store, platList []platform.Platform, mp *plugin.Marketplace, targetPlatforms []string) error {
+	sourceDir := store.PluginDir(mp.Name)
+
+	if _, err := os.Stat(sourceDir); err != nil {
+		return fmt.Errorf("marketplace directory not found: %w", err)
+	}
+
+	gitSha := getGitCommitSha(sourceDir)
+	repoRef := repoURLToRef(mp.RepoURL)
+
+	// Build plugin info list, resolving external plugins (clone from URL if needed)
+	var pluginInfos []platform.PluginPathInfo
+	if len(mp.Plugins) > 0 {
+		for _, pi := range mp.Plugins {
+			ppi := platform.PluginPathInfo{
+				Name: pi.Name,
+				Path: pi.Path,
+			}
+			// If plugin has an external URL source, clone it and use that as source
+			if pi.SourceURL != "" {
+				resolvedDir, err := store.ResolvePluginDir(sourceDir, pi)
+				if err != nil {
+					return fmt.Errorf("resolving plugin %s source: %w", pi.Name, err)
+				}
+				ppi.SourceDir = resolvedDir
+			}
+			pluginInfos = append(pluginInfos, ppi)
+		}
+	} else {
+		// Single-plugin marketplace
+		pluginInfos = []platform.PluginPathInfo{
+			{Name: mp.Name, Path: "."},
+		}
+	}
+
+	platLookup := make(map[string]platform.Platform)
+	for _, pl := range platList {
+		platLookup[pl.Name] = pl
+	}
+
+	for _, platName := range targetPlatforms {
+		pl := platLookup[platName]
+		installType := platform.PluginInstallClass(pl.Name)
+
+		switch installType {
+		case platform.PluginInstallUnsupported:
+			continue
+
+		case platform.PluginInstallClaude:
+			if err := platform.SymlinkPlugin(pl.MarketplacesDir, mp.Name, sourceDir); err != nil {
+				return fmt.Errorf("linking marketplace to %s: %w", platName, err)
+			}
+			if err := platform.InstallPluginToPlatform(
+				pl.MarketplacesDir, mp.Name, repoRef,
+				pluginInfos, sourceDir, mp.Version, gitSha,
+			); err != nil {
+				return fmt.Errorf("installing to %s: %w", platName, err)
+			}
+
+		case platform.PluginInstallCopilot:
+			// Copilot does NOT use plugins/marketplaces/ — skip symlink step.
+			// Copilot reads installed plugins from installed-plugins/ and config.json.
+			if err := platform.InstallPluginToCopilot(
+				pl.SkillsDir, mp.Name, repoRef,
+				pluginInfos, sourceDir, mp.Version, gitSha,
+			); err != nil {
+				return fmt.Errorf("installing to copilot %s: %w", platName, err)
+			}
+
+		case platform.PluginInstallSymlinkOnly:
+			// Only symlink the marketplace directory
+			if err := platform.SymlinkPlugin(pl.MarketplacesDir, mp.Name, sourceDir); err != nil {
+				return fmt.Errorf("linking marketplace to %s: %w", platName, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func getGitCommitSha(dir string) string {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// repoURLToRef converts a full GitHub URL to owner/repo format.
+// e.g. "https://github.com/HKUDS/CLI-Anything" → "HKUDS/CLI-Anything"
+func repoURLToRef(url string) string {
+	url = strings.TrimSuffix(url, "/")
+	url = strings.TrimSuffix(url, ".git")
+	parts := strings.Split(url, "/")
+	if len(parts) >= 2 {
+		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+	}
+	return url
+}
+
+// claudePluginCleanup performs Claude-style plugin cleanup:
+// removes symlink, installed_plugins.json entries, known_marketplaces.json,
+// cache directory, and settings.json enabledPlugins entries.
+func (m *AppModel) claudePluginCleanup(marketplacesDir, name string) {
+	platform.UnsymlinkPlugin(marketplacesDir, name)
+	platform.RemoveInstalledPlugin(marketplacesDir, name)
+	platform.RemoveKnownMarketplace(marketplacesDir, name)
+	platform.RemovePluginCache(marketplacesDir, name)
+	for _, mp := range m.marketplaces {
+		if mp.Name == name {
+			for _, pi := range mp.Plugins {
+				platform.DisablePluginInSettings(marketplacesDir, name+"@"+pi.Name)
+			}
+			if len(mp.Plugins) == 0 {
+				platform.DisablePluginInSettings(marketplacesDir, name+"@"+name)
+			}
+		}
+	}
+}
+
+// copilotPluginCleanup performs Copilot-native plugin cleanup:
+// removes installed-plugins/ and plugin-data/ directories, and updates settings.json.
+func (m *AppModel) copilotPluginCleanup(skillsDir, name string) {
+	var pluginInfos []platform.PluginPathInfo
+	for _, mp := range m.marketplaces {
+		if mp.Name == name {
+			for _, pi := range mp.Plugins {
+				pluginInfos = append(pluginInfos, platform.PluginPathInfo{Name: pi.Name, Path: pi.Path})
+			}
+			if len(mp.Plugins) == 0 {
+				pluginInfos = append(pluginInfos, platform.PluginPathInfo{Name: name, Path: "."})
+			}
+		}
+	}
+	platform.UninstallPluginFromCopilot(skillsDir, name, pluginInfos)
+}
+
+func (m *AppModel) uninstallPlatformLinks(name string) {
+	for _, pl := range m.platforms {
+		if pl.Category == "central" {
+			continue
+		}
+		installType := platform.PluginInstallClass(pl.Name)
+		if installType == platform.PluginInstallUnsupported {
+			continue
+		}
+
+		switch installType {
+		case platform.PluginInstallClaude:
+			m.claudePluginCleanup(pl.MarketplacesDir, name)
+
+		case platform.PluginInstallCopilot:
+			m.copilotPluginCleanup(pl.SkillsDir, name)
+			m.claudePluginCleanup(pl.MarketplacesDir, name)
+
+		case platform.PluginInstallSymlinkOnly:
+			platform.UnsymlinkPlugin(pl.MarketplacesDir, name)
+		}
+	}
+	m.loadPlugins()
+}
+
+func (m *AppModel) deleteMarketplace(name string) {
+	for _, pl := range m.platforms {
+		if pl.Category == "central" {
+			continue
+		}
+		installType := platform.PluginInstallClass(pl.Name)
+		if installType == platform.PluginInstallUnsupported {
+			continue
+		}
+
+		switch installType {
+		case platform.PluginInstallClaude:
+			m.claudePluginCleanup(pl.MarketplacesDir, name)
+
+		case platform.PluginInstallCopilot:
+			m.copilotPluginCleanup(pl.SkillsDir, name)
+			m.claudePluginCleanup(pl.MarketplacesDir, name)
+
+		case platform.PluginInstallSymlinkOnly:
+			platform.UnsymlinkPlugin(pl.MarketplacesDir, name)
+		}
+	}
+	m.pluginStore.RemoveMarketplace(name)
+	m.loadPlugins()
+}
+
+func (m AppModel) renderPluginAdd() string {
+	var b strings.Builder
+	b.WriteString(m.theme.Title.Render("Add Plugin"))
+	b.WriteString("\n\n")
+
+	if m.pluginCloning {
+		b.WriteString(m.theme.Accent.Render("  Cloning... please wait"))
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Dimmed.Render("  Esc: cancel"))
+	} else {
+		b.WriteString(m.theme.Normal.Render("  Enter a GitHub repo (owner/repo) to clone as a plugin:"))
+		b.WriteString("\n\n")
+		b.WriteString("  ")
+		b.WriteString(m.pluginAddInput.View())
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Dimmed.Render("  Install to: " + m.pluginStore.PluginsDir()))
+		b.WriteString("\n")
+		b.WriteString(m.theme.Dimmed.Render("  Enter: confirm  Esc: cancel"))
+	}
+
+	return b.String()
+}
+
+func (m AppModel) handlePluginAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.currentView = viewList
+		m.pluginAddInput.Blur()
+		return m, nil
+	case "enter":
+		repo := strings.TrimSpace(m.pluginAddInput.Value())
+		m.pluginAddInput.Blur()
+		if repo == "" {
+			m.currentView = viewList
+			return m, nil
+		}
+		m.pluginCloning = true
+		store := m.pluginStore
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
+			mp, err := store.AddByRepo(ctx, repo)
+			return marketplaceClonedMsg{marketplace: mp, err: err}
+		}
+	default:
+		var cmd tea.Cmd
+		m.pluginAddInput, cmd = m.pluginAddInput.Update(msg)
+		return m, cmd
+	}
+}
+
+func (m AppModel) renderStatusBar() string {
+	m.statusBar = components.StatusBar{
+		Theme:     m.theme,
+		Width:     m.width,
+		Tab:       m.tabs[m.activeTab],
+		Platforms: len(m.platforms),
+	}
+
+	if m.activeTab == tabPlugin {
+		clonedCount := 0
+		for _, mp := range m.marketplaces {
+			if mp.Status == "cloned" {
+				clonedCount++
+			}
+		}
+		m.statusBar.PluginInfo = fmt.Sprintf("%d marketplaces · %d platforms", clonedCount, len(m.platforms))
+		m.statusBar.Path = m.pluginStore.PluginsDir()
+	} else {
+		m.statusBar.SkillCount = len(m.skills)
+		m.statusBar.Path = m.cfg.SkillsPath
+	}
+
+	return m.statusBar.View()
 }

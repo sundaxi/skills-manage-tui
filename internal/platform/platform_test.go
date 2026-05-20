@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -150,9 +151,13 @@ func TestInstallPluginToCopilot(t *testing.T) {
 	skillsDir := filepath.Join(tmpDir, "skills")
 	os.MkdirAll(skillsDir, 0755)
 
-	// Create initial settings.json
+	// Create initial settings.json (user-editable)
 	settingsPath := filepath.Join(tmpDir, "settings.json")
-	os.WriteFile(settingsPath, []byte(`{"enabledPlugins":{},"extraKnownMarketplaces":{},"installedPlugins":[]}`), 0644)
+	os.WriteFile(settingsPath, []byte(`{"enabledPlugins":{},"extraKnownMarketplaces":{}}`), 0644)
+
+	// Create initial config.json (auto-managed, with comment header)
+	configPath := filepath.Join(tmpDir, "config.json")
+	os.WriteFile(configPath, []byte("// User settings belong in settings.json.\n// This file is managed automatically.\n{\"installedPlugins\":[]}\n"), 0644)
 
 	// Create a fake plugin source
 	sourceDir := filepath.Join(tmpDir, "source", "test-mp")
@@ -187,15 +192,16 @@ func TestInstallPluginToCopilot(t *testing.T) {
 		t.Fatalf("plugin-data dir not created: %v", err)
 	}
 
-	// Verify settings.json updated
-	data, _ := os.ReadFile(settingsPath)
-	var settings map[string]interface{}
-	json.Unmarshal(data, &settings)
-
-	// Check installedPlugins
-	ipList, ok := settings["installedPlugins"].([]interface{})
+	// Verify config.json has installedPlugins (and preserved comment header)
+	configData, _ := os.ReadFile(configPath)
+	configStr := string(configData)
+	if !strings.Contains(configStr, "// User settings") {
+		t.Error("config.json comment header was lost")
+	}
+	config, _ := loadCopilotConfig(configPath)
+	ipList, ok := config["installedPlugins"].([]interface{})
 	if !ok || len(ipList) != 1 {
-		t.Fatalf("expected 1 installed plugin, got %v", ipList)
+		t.Fatalf("expected 1 installed plugin in config.json, got %v", ipList)
 	}
 	entry := ipList[0].(map[string]interface{})
 	if entry["marketplace"] != "test-mp" || entry["name"] != "my-plugin" {
@@ -206,6 +212,16 @@ func TestInstallPluginToCopilot(t *testing.T) {
 	}
 	if entry["enabled"] != true {
 		t.Errorf("enabled = %v, want true", entry["enabled"])
+	}
+
+	// Verify settings.json has enabledPlugins + extraKnownMarketplaces (NOT installedPlugins)
+	data, _ := os.ReadFile(settingsPath)
+	var settings map[string]interface{}
+	json.Unmarshal(data, &settings)
+
+	// settings.json should NOT have installedPlugins (that goes in config.json)
+	if _, hasIP := settings["installedPlugins"]; hasIP {
+		t.Error("settings.json should NOT contain installedPlugins — those belong in config.json")
 	}
 
 	// Check enabledPlugins
@@ -226,18 +242,23 @@ func TestUninstallPluginFromCopilot(t *testing.T) {
 	skillsDir := filepath.Join(tmpDir, "skills")
 	os.MkdirAll(skillsDir, 0755)
 
-	// Create settings.json with existing plugin
+	cachePath := filepath.Join(tmpDir, "installed-plugins", "test-mp", "my-plugin")
+
+	// Create config.json with existing plugin (auto-managed)
+	configPath := filepath.Join(tmpDir, "config.json")
+	configContent := "// This file is managed automatically.\n" + `{"installedPlugins":[{"cache_path":"` + cachePath + `","marketplace":"test-mp","name":"my-plugin","version":"2.0.0","enabled":true}]}` + "\n"
+	os.WriteFile(configPath, []byte(configContent), 0644)
+
+	// Create settings.json with enabledPlugins + extraKnownMarketplaces
 	settingsPath := filepath.Join(tmpDir, "settings.json")
 	settingsContent := `{
 		"enabledPlugins": {"test-mp@my-plugin": true},
-		"extraKnownMarketplaces": {"test-mp": {"source": {"source": "github", "repo": "owner/repo"}}},
-		"installedPlugins": [{"cache_path": "` + filepath.Join(tmpDir, "installed-plugins", "test-mp", "my-plugin") + `", "marketplace": "test-mp", "name": "my-plugin", "version": "2.0.0", "enabled": true}]
+		"extraKnownMarketplaces": {"test-mp": {"source": {"source": "github", "repo": "owner/repo"}}}
 	}`
 	os.WriteFile(settingsPath, []byte(settingsContent), 0644)
 
 	// Create installed-plugins dir
-	ipDir := filepath.Join(tmpDir, "installed-plugins", "test-mp", "my-plugin")
-	os.MkdirAll(ipDir, 0755)
+	os.MkdirAll(cachePath, 0755)
 
 	plugins := []PluginPathInfo{{Name: "my-plugin", Path: "./my-plugin"}}
 	err := UninstallPluginFromCopilot(skillsDir, "test-mp", plugins)
@@ -250,15 +271,17 @@ func TestUninstallPluginFromCopilot(t *testing.T) {
 		t.Errorf("installed-plugins/test-mp should be removed")
 	}
 
+	// Verify config.json cleaned up
+	config, _ := loadCopilotConfig(configPath)
+	ipList, _ := config["installedPlugins"].([]interface{})
+	if len(ipList) != 0 {
+		t.Errorf("config.json installedPlugins should be empty, got %v", ipList)
+	}
+
 	// Verify settings.json cleaned up
 	data, _ := os.ReadFile(settingsPath)
 	var settings map[string]interface{}
 	json.Unmarshal(data, &settings)
-
-	ipList, _ := settings["installedPlugins"].([]interface{})
-	if len(ipList) != 0 {
-		t.Errorf("installedPlugins should be empty, got %v", ipList)
-	}
 
 	ep, _ := settings["enabledPlugins"].(map[string]interface{})
 	if _, ok := ep["test-mp@my-plugin"]; ok {
