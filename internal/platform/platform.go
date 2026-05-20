@@ -194,37 +194,6 @@ func SymlinkPlugin(marketplacesDir, pluginName, sourceDir string) error {
 	return os.Symlink(absSource, linkPath)
 }
 
-// UnsymlinkPlugin removes a plugin symlink from marketplaces directory.
-func UnsymlinkPlugin(marketplacesDir, pluginName string) error {
-	linkPath := filepath.Join(marketplacesDir, pluginName)
-	info, err := os.Lstat(linkPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return os.Remove(linkPath)
-	}
-	return nil
-}
-
-// InstalledMarketplaceNames returns names of marketplaces linked in a platform's dir.
-func InstalledMarketplaceNames(marketplacesDir string) []string {
-	entries, err := os.ReadDir(marketplacesDir)
-	if err != nil {
-		return nil
-	}
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() || e.Type()&os.ModeSymlink != 0 {
-			names = append(names, e.Name())
-		}
-	}
-	return names
-}
-
 // --- Claude Code installed_plugins.json management ---
 
 // InstalledPluginEntry represents a single installation record.
@@ -257,132 +226,6 @@ func InstalledPluginsPath(marketplacesDir string) string {
 // KnownMarketplacesPath returns the path to known_marketplaces.json for a platform.
 func KnownMarketplacesPath(marketplacesDir string) string {
 	return filepath.Join(pluginsBaseDir(marketplacesDir), "known_marketplaces.json")
-}
-
-// RecordInstalledPlugins adds entries to installed_plugins.json for all plugins
-// in the given marketplace. The key format is "marketplaceName@pluginName".
-func RecordInstalledPlugins(marketplacesDir, marketplaceName, sourceDir, version, gitSha string, pluginNames []string) error {
-	path := InstalledPluginsPath(marketplacesDir)
-
-	file := loadInstalledPlugins(path)
-	if file.Plugins == nil {
-		file.Plugins = make(map[string][]InstalledPluginEntry)
-	}
-
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	absSource, _ := filepath.Abs(sourceDir)
-
-	for _, pluginName := range pluginNames {
-		key := marketplaceName + "@" + pluginName
-		installPath := filepath.Join(absSource, pluginName)
-
-		entry := InstalledPluginEntry{
-			Scope:        "user",
-			InstallPath:  installPath,
-			Version:      version,
-			InstalledAt:  now,
-			LastUpdated:  now,
-			GitCommitSha: gitSha,
-		}
-		file.Plugins[key] = []InstalledPluginEntry{entry}
-	}
-
-	return saveInstalledPlugins(path, file)
-}
-
-// PluginPathInfo holds a plugin's name and its relative path within the marketplace.
-type PluginPathInfo struct {
-	Name      string // plugin display name
-	Path      string // relative path within marketplace source dir
-	SourceDir string // override source dir (for external plugins cloned from URL)
-}
-
-// RecordInstalledPluginsWithPaths adds entries using the actual plugin subdirectory paths.
-func RecordInstalledPluginsWithPaths(marketplacesDir, marketplaceName, sourceDir, version, gitSha string, plugins []PluginPathInfo) error {
-	path := InstalledPluginsPath(marketplacesDir)
-
-	file := loadInstalledPlugins(path)
-	if file.Plugins == nil {
-		file.Plugins = make(map[string][]InstalledPluginEntry)
-	}
-
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	absSource, _ := filepath.Abs(sourceDir)
-
-	for _, pi := range plugins {
-		key := marketplaceName + "@" + pi.Name
-		// Resolve the plugin's actual directory from its relative path
-		relPath := strings.TrimPrefix(pi.Path, "./")
-		installPath := absSource
-		if relPath != "" && relPath != "." {
-			installPath = filepath.Join(absSource, relPath)
-		}
-
-		entry := InstalledPluginEntry{
-			Scope:        "user",
-			InstallPath:  installPath,
-			Version:      version,
-			InstalledAt:  now,
-			LastUpdated:  now,
-			GitCommitSha: gitSha,
-		}
-		file.Plugins[key] = []InstalledPluginEntry{entry}
-	}
-
-	return saveInstalledPlugins(path, file)
-}
-
-// RecordInstalledMarketplace adds a single entry for a whole-marketplace install
-// (when the marketplace IS the plugin, e.g. single-plugin repos like ECC).
-func RecordInstalledMarketplace(marketplacesDir, marketplaceName, sourceDir, version, gitSha string) error {
-	path := InstalledPluginsPath(marketplacesDir)
-
-	file := loadInstalledPlugins(path)
-	if file.Plugins == nil {
-		file.Plugins = make(map[string][]InstalledPluginEntry)
-	}
-
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	absSource, _ := filepath.Abs(sourceDir)
-
-	key := marketplaceName + "@" + marketplaceName
-	entry := InstalledPluginEntry{
-		Scope:        "user",
-		InstallPath:  absSource,
-		Version:      version,
-		InstalledAt:  now,
-		LastUpdated:  now,
-		GitCommitSha: gitSha,
-	}
-	file.Plugins[key] = []InstalledPluginEntry{entry}
-
-	return saveInstalledPlugins(path, file)
-}
-
-// RemovePluginCache removes the cached plugin directory for a marketplace.
-func RemovePluginCache(marketplacesDir, marketplaceName string) {
-	baseDir := pluginsBaseDir(marketplacesDir)
-	cacheDir := filepath.Join(baseDir, "cache", marketplaceName)
-	os.RemoveAll(cacheDir)
-}
-
-// RemoveInstalledPlugin removes entries for a marketplace from installed_plugins.json.
-func RemoveInstalledPlugin(marketplacesDir, marketplaceName string) error {
-	path := InstalledPluginsPath(marketplacesDir)
-
-	file := loadInstalledPlugins(path)
-	if file.Plugins == nil {
-		return nil
-	}
-
-	prefix := marketplaceName + "@"
-	for key := range file.Plugins {
-		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
-			delete(file.Plugins, key)
-		}
-	}
-
-	return saveInstalledPlugins(path, file)
 }
 
 func loadInstalledPlugins(path string) *InstalledPluginsFile {
@@ -439,16 +282,6 @@ func RecordKnownMarketplace(marketplacesDir, marketplaceName, repoRef, installLo
 		InstallLocation: installLocation,
 		LastUpdated:     now,
 	}
-
-	return saveKnownMarketplaces(path, entries)
-}
-
-// RemoveKnownMarketplace removes an entry from known_marketplaces.json.
-func RemoveKnownMarketplace(marketplacesDir, marketplaceName string) error {
-	path := KnownMarketplacesPath(marketplacesDir)
-
-	entries := loadKnownMarketplaces(path)
-	delete(entries, marketplaceName)
 
 	return saveKnownMarketplaces(path, entries)
 }
@@ -550,6 +383,13 @@ func copyDir(src, dst string) error {
 		}
 	}
 	return nil
+}
+
+// PluginPathInfo holds a plugin's name and its relative path within the marketplace.
+type PluginPathInfo struct {
+	Name      string // plugin display name
+	Path      string // relative path within marketplace source dir
+	SourceDir string // override source dir (for external plugins cloned from URL)
 }
 
 // InstallPluginToPlatform performs the full Claude Code compatible plugin install:
@@ -662,24 +502,6 @@ func EnablePluginInSettings(marketplacesDir, pluginKey string) {
 		enabled = make(map[string]interface{})
 	}
 	enabled[pluginKey] = true
-	settings["enabledPlugins"] = enabled
-
-	saveSettingsFile(settingsPath, settings)
-}
-
-// DisablePluginInSettings removes a plugin key from settings.json enabledPlugins.
-func DisablePluginInSettings(marketplacesDir, pluginKey string) {
-	pluginsDir := pluginsBaseDir(marketplacesDir)
-	platformRoot := filepath.Dir(pluginsDir)
-
-	settingsPath := filepath.Join(platformRoot, "settings.json")
-	settings := loadSettingsFile(settingsPath)
-
-	enabled, ok := settings["enabledPlugins"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	delete(enabled, pluginKey)
 	settings["enabledPlugins"] = enabled
 
 	saveSettingsFile(settingsPath, settings)
