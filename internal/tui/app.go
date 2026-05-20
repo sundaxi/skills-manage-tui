@@ -1101,7 +1101,7 @@ func (m AppModel) renderPluginList() string {
 			isInstalled := false
 			for _, pp := range m.platforms {
 				if pp.Name == pl {
-					isInstalled = platform.IsPluginInstalled(pp.MarketplacesDir, mp.Name)
+					isInstalled = platform.IsPluginInstalled(pp, mp.Name)
 					break
 				}
 			}
@@ -1220,7 +1220,7 @@ func (m AppModel) renderPluginDetail() string {
 		if pl.Category == "central" {
 			continue
 		}
-		if platform.IsPluginInstalled(pl.MarketplacesDir, mp.Name) {
+		if platform.IsPluginInstalled(pl, mp.Name) {
 			installedPlatforms = append(installedPlatforms, pl.Name)
 		}
 	}
