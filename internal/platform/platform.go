@@ -102,9 +102,10 @@ func dirExists(path string) bool {
 	return info.IsDir()
 }
 
-// IsPluginInstalled checks if a plugin is installed to a platform.
-// For Copilot, it checks the installed-plugins/ directory and config.json.
-// For Claude and other platforms, it checks the marketplaces symlink.
+// IsPluginInstalled checks if a plugin/marketplace is installed on a platform.
+// For Copilot, checks installed-plugins/<marketplace>/<plugin>/ exists.
+// For Claude and others, checks if marketplaces/<name>/ directory exists
+// (created by the native CLI `plugin marketplace add` command).
 func IsPluginInstalled(p Platform, pluginName string) bool {
 	installType := PluginInstallClass(p.Name)
 
@@ -117,20 +118,9 @@ func IsPluginInstalled(p Platform, pluginName string) bool {
 		return err == nil
 
 	default:
-		// Claude + others: check marketplaces dir for symlink/directory
-		linkPath := filepath.Join(p.MarketplacesDir, pluginName)
-		info, err := os.Lstat(linkPath)
-		if err != nil {
-			return false
-		}
-		if info.Mode()&os.ModeSymlink == 0 {
-			return true
-		}
-		target, err := os.Readlink(linkPath)
-		if err != nil {
-			return false
-		}
-		_, err = os.Stat(target)
+		// Claude + others: check marketplaces/<name>/ directory exists
+		dirPath := filepath.Join(p.MarketplacesDir, pluginName)
+		_, err := os.Stat(dirPath)
 		return err == nil
 	}
 }

@@ -1403,38 +1403,16 @@ func (m AppModel) handleMarketplaceInstall(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 }
 
 func doInstallMarketplaceSync(store *plugin.Store, platList []platform.Platform, mp *plugin.Marketplace, targetPlatforms []string) error {
-	sourceDir := store.PluginDir(mp.Name)
-
-	if _, err := os.Stat(sourceDir); err != nil {
-		return fmt.Errorf("marketplace directory not found: %w", err)
-	}
-
-	gitSha := getGitCommitSha(sourceDir)
 	repoRef := repoURLToRef(mp.RepoURL)
 
-	// Build plugin info list, resolving external plugins (clone from URL if needed)
-	var pluginInfos []platform.PluginPathInfo
+	// Build plugin name list
+	var pluginNames []string
 	if len(mp.Plugins) > 0 {
 		for _, pi := range mp.Plugins {
-			ppi := platform.PluginPathInfo{
-				Name: pi.Name,
-				Path: pi.Path,
-			}
-			// If plugin has an external URL source, clone it and use that as source
-			if pi.SourceURL != "" {
-				resolvedDir, err := store.ResolvePluginDir(sourceDir, pi)
-				if err != nil {
-					return fmt.Errorf("resolving plugin %s source: %w", pi.Name, err)
-				}
-				ppi.SourceDir = resolvedDir
-			}
-			pluginInfos = append(pluginInfos, ppi)
+			pluginNames = append(pluginNames, pi.Name)
 		}
 	} else {
-		// Single-plugin marketplace
-		pluginInfos = []platform.PluginPathInfo{
-			{Name: mp.Name, Path: "."},
-		}
+		pluginNames = []string{mp.Name}
 	}
 
 	platLookup := make(map[string]platform.Platform)
@@ -1443,40 +1421,21 @@ func doInstallMarketplaceSync(store *plugin.Store, platList []platform.Platform,
 	}
 
 	for _, platName := range targetPlatforms {
-		pl := platLookup[platName]
-		installType := platform.PluginInstallClass(pl.Name)
-
-		switch installType {
-		case platform.PluginInstallUnsupported:
+		installType := platform.PluginInstallClass(platName)
+		if installType == platform.PluginInstallUnsupported {
 			continue
-
-		case platform.PluginInstallClaude:
-			if err := platform.SymlinkPlugin(pl.MarketplacesDir, mp.Name, sourceDir); err != nil {
-				return fmt.Errorf("linking marketplace to %s: %w", platName, err)
-			}
-			if err := platform.InstallPluginToPlatform(
-				pl.MarketplacesDir, mp.Name, repoRef,
-				pluginInfos, sourceDir, mp.Version, gitSha,
-			); err != nil {
-				return fmt.Errorf("installing to %s: %w", platName, err)
-			}
-
-		case platform.PluginInstallCopilot:
-			// Copilot does NOT use plugins/marketplaces/ — skip symlink step.
-			// Copilot reads installed plugins from installed-plugins/ and config.json.
-			if err := platform.InstallPluginToCopilot(
-				pl.SkillsDir, mp.Name, repoRef,
-				pluginInfos, sourceDir, mp.Version, gitSha,
-			); err != nil {
-				return fmt.Errorf("installing to copilot %s: %w", platName, err)
-			}
-
-		case platform.PluginInstallSymlinkOnly:
-			// Only symlink the marketplace directory
-			if err := platform.SymlinkPlugin(pl.MarketplacesDir, mp.Name, sourceDir); err != nil {
-				return fmt.Errorf("linking marketplace to %s: %w", platName, err)
-			}
 		}
+
+		// Use native CLI for platforms that support it (claude, copilot, hermes)
+		cli := platform.PlatformCLI(platName)
+		if cli != "" {
+			if err := platform.InstallMarketplaceViaCLI(platName, repoRef, mp.Name, pluginNames); err != nil {
+				return fmt.Errorf("installing to %s via CLI: %w", platName, err)
+			}
+			continue
+		}
+
+		// Fallback: platforms without CLI support are skipped
 	}
 
 	return nil
@@ -1502,44 +1461,10 @@ func repoURLToRef(url string) string {
 	return url
 }
 
-// claudePluginCleanup performs Claude-style plugin cleanup:
-// removes symlink, installed_plugins.json entries, known_marketplaces.json,
-// cache directory, and settings.json enabledPlugins entries.
-func (m *AppModel) claudePluginCleanup(marketplacesDir, name string) {
-	platform.UnsymlinkPlugin(marketplacesDir, name)
-	platform.RemoveInstalledPlugin(marketplacesDir, name)
-	platform.RemoveKnownMarketplace(marketplacesDir, name)
-	platform.RemovePluginCache(marketplacesDir, name)
-	for _, mp := range m.marketplaces {
-		if mp.Name == name {
-			for _, pi := range mp.Plugins {
-				platform.DisablePluginInSettings(marketplacesDir, name+"@"+pi.Name)
-			}
-			if len(mp.Plugins) == 0 {
-				platform.DisablePluginInSettings(marketplacesDir, name+"@"+name)
-			}
-		}
-	}
-}
-
-// copilotPluginCleanup performs Copilot-native plugin cleanup:
-// removes installed-plugins/ and plugin-data/ directories, and updates settings.json.
-func (m *AppModel) copilotPluginCleanup(skillsDir, name string) {
-	var pluginInfos []platform.PluginPathInfo
-	for _, mp := range m.marketplaces {
-		if mp.Name == name {
-			for _, pi := range mp.Plugins {
-				pluginInfos = append(pluginInfos, platform.PluginPathInfo{Name: pi.Name, Path: pi.Path})
-			}
-			if len(mp.Plugins) == 0 {
-				pluginInfos = append(pluginInfos, platform.PluginPathInfo{Name: name, Path: "."})
-			}
-		}
-	}
-	platform.UninstallPluginFromCopilot(skillsDir, name, pluginInfos)
-}
-
 func (m *AppModel) uninstallPlatformLinks(name string) {
+	// Build plugin name list from marketplace
+	pluginNames := m.pluginNamesForMarketplace(name)
+
 	for _, pl := range m.platforms {
 		if pl.Category == "central" {
 			continue
@@ -1549,45 +1474,34 @@ func (m *AppModel) uninstallPlatformLinks(name string) {
 			continue
 		}
 
-		switch installType {
-		case platform.PluginInstallClaude:
-			m.claudePluginCleanup(pl.MarketplacesDir, name)
-
-		case platform.PluginInstallCopilot:
-			m.copilotPluginCleanup(pl.SkillsDir, name)
-			m.claudePluginCleanup(pl.MarketplacesDir, name)
-
-		case platform.PluginInstallSymlinkOnly:
-			platform.UnsymlinkPlugin(pl.MarketplacesDir, name)
+		cli := platform.PlatformCLI(pl.Name)
+		if cli != "" {
+			platform.UninstallMarketplaceViaCLI(pl.Name, pluginNames)
 		}
 	}
 	m.loadPlugins()
 }
 
 func (m *AppModel) deleteMarketplace(name string) {
-	for _, pl := range m.platforms {
-		if pl.Category == "central" {
-			continue
-		}
-		installType := platform.PluginInstallClass(pl.Name)
-		if installType == platform.PluginInstallUnsupported {
-			continue
-		}
-
-		switch installType {
-		case platform.PluginInstallClaude:
-			m.claudePluginCleanup(pl.MarketplacesDir, name)
-
-		case platform.PluginInstallCopilot:
-			m.copilotPluginCleanup(pl.SkillsDir, name)
-			m.claudePluginCleanup(pl.MarketplacesDir, name)
-
-		case platform.PluginInstallSymlinkOnly:
-			platform.UnsymlinkPlugin(pl.MarketplacesDir, name)
-		}
-	}
+	m.uninstallPlatformLinks(name)
 	m.pluginStore.RemoveMarketplace(name)
 	m.loadPlugins()
+}
+
+func (m *AppModel) pluginNamesForMarketplace(name string) []string {
+	for _, mp := range m.marketplaces {
+		if mp.Name == name {
+			if len(mp.Plugins) > 0 {
+				names := make([]string, len(mp.Plugins))
+				for i, pi := range mp.Plugins {
+					names[i] = pi.Name
+				}
+				return names
+			}
+			return []string{name}
+		}
+	}
+	return []string{name}
 }
 
 func (m AppModel) renderPluginAdd() string {
