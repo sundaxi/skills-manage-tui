@@ -1034,7 +1034,7 @@ func (m AppModel) renderPluginList() string {
 	if len(m.marketplaces) == 0 {
 		b.WriteString(m.theme.Dimmed.Render("  No plugins found"))
 		b.WriteString("\n")
-		b.WriteString(m.theme.Dimmed.Render("  Press 'a' to add from GitHub  'r' to refresh from registry"))
+		b.WriteString(m.theme.Dimmed.Render("  Press 'a' to add marketplace from GitHub  'r' to refresh from registry"))
 		return b.String()
 	}
 
@@ -1293,7 +1293,7 @@ func (m AppModel) handlePluginList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pluginScroll = 0
 	case "a":
 		ti := textinput.New()
-		ti.Placeholder = "owner/repo (e.g. HKUDS/CLI-Anything)"
+		ti.Placeholder = "owner/repo or full URL (e.g. affaan-m/ECC)"
 		ti.Focus()
 		ti.CharLimit = 200
 		ti.Width = 50
@@ -1592,7 +1592,7 @@ func (m *AppModel) deleteMarketplace(name string) {
 
 func (m AppModel) renderPluginAdd() string {
 	var b strings.Builder
-	b.WriteString(m.theme.Title.Render("Add Plugin"))
+	b.WriteString(m.theme.Title.Render("Add Marketplace"))
 	b.WriteString("\n\n")
 
 	if m.pluginCloning {
@@ -1600,7 +1600,7 @@ func (m AppModel) renderPluginAdd() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Dimmed.Render("  Esc: cancel"))
 	} else {
-		b.WriteString(m.theme.Normal.Render("  Enter a GitHub repo (owner/repo) to clone as a plugin:"))
+		b.WriteString(m.theme.Normal.Render("  Enter a GitHub repo (owner/repo) to add as a marketplace:"))
 		b.WriteString("\n\n")
 		b.WriteString("  ")
 		b.WriteString(m.pluginAddInput.View())

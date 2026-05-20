@@ -112,8 +112,8 @@ func TestInstallPluginToPlatform(t *testing.T) {
 		t.Fatalf("InstallPluginToPlatform failed: %v", err)
 	}
 
-	// Cache uses version "1.0.0" since it's non-empty
-	cacheDir := filepath.Join(tmpDir, "plugins", "cache", "test-mp", "my-plugin", "1.0.0")
+	// Cache uses git SHA prefix (12 chars) as version, not semver
+	cacheDir := filepath.Join(tmpDir, "plugins", "cache", "test-mp", "my-plugin", "abc123def456")
 	if _, err := os.Stat(cacheDir); err != nil {
 		t.Fatalf("cache dir not created: %v", err)
 	}
@@ -207,8 +207,8 @@ func TestInstallPluginToCopilot(t *testing.T) {
 	if entry["marketplace"] != "test-mp" || entry["name"] != "my-plugin" {
 		t.Errorf("installedPlugins entry = %v", entry)
 	}
-	if entry["version"] != "2.0.0" {
-		t.Errorf("version = %v, want 2.0.0", entry["version"])
+	if entry["version"] != "abc123def456" {
+		t.Errorf("version = %v, want abc123def456 (SHA prefix)", entry["version"])
 	}
 	if entry["enabled"] != true {
 		t.Errorf("enabled = %v, want true", entry["enabled"])

@@ -510,10 +510,14 @@ func copyDir(src, dst string) error {
 func InstallPluginToPlatform(marketplacesDir, marketplaceName, repoRef string, plugins []PluginPathInfo, sourceDir, version, gitSha string) error {
 	absSource, _ := filepath.Abs(sourceDir)
 
-	// Determine short version from git sha
-	shortVersion := version
-	if shortVersion == "" && len(gitSha) >= 12 {
+	// Always use git SHA prefix (12 chars) as version, matching Claude Code native behavior.
+	// Claude Code uses commit SHA, not semver, for cache paths and version records.
+	shortVersion := ""
+	if len(gitSha) >= 12 {
 		shortVersion = gitSha[:12]
+	}
+	if shortVersion == "" {
+		shortVersion = version // fallback to manifest version if no SHA available
 	}
 
 	pluginsFilePath := InstalledPluginsPath(marketplacesDir)
@@ -671,9 +675,13 @@ func saveCopilotConfig(path string, config map[string]interface{}, header string
 func InstallPluginToCopilot(skillsDir, marketplaceName, repoRef string, plugins []PluginPathInfo, sourceDir, version, gitSha string) error {
 	absSource, _ := filepath.Abs(sourceDir)
 
-	shortVersion := version
-	if shortVersion == "" && len(gitSha) >= 12 {
+	// Always use git SHA prefix (12 chars) as version, matching native behavior.
+	shortVersion := ""
+	if len(gitSha) >= 12 {
 		shortVersion = gitSha[:12]
+	}
+	if shortVersion == "" {
+		shortVersion = version // fallback to manifest version if no SHA available
 	}
 
 	installedDir := CopilotInstalledPluginsDir(skillsDir)
