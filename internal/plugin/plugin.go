@@ -607,6 +607,8 @@ func CloneRepo(ctx context.Context, repoURL, targetDir string) error {
 
 	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", repoURL, targetDir)
 	if output, err := cmd.CombinedOutput(); err != nil {
+		// Clean up partial clone on failure (e.g. timeout leaves broken .git)
+		os.RemoveAll(targetDir)
 		return fmt.Errorf("git clone failed: %s: %w", string(output), err)
 	}
 	return nil

@@ -2,6 +2,7 @@ package platform
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -29,6 +30,8 @@ func AddMarketplaceViaCLI(platformName, source string) error {
 	}
 
 	cmd := exec.Command(cli, "plugin", "marketplace", "add", source)
+	// Set generous git clone timeout for large marketplace repos
+	cmd.Env = append(os.Environ(), "CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS=300000")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		out := strings.TrimSpace(string(output))

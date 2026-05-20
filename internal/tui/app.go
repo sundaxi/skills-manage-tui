@@ -1403,7 +1403,11 @@ func (m AppModel) handleMarketplaceInstall(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 }
 
 func doInstallMarketplaceSync(store *plugin.Store, platList []platform.Platform, mp *plugin.Marketplace, targetPlatforms []string) error {
-	repoRef := repoURLToRef(mp.RepoURL)
+	// Use the local clone path for marketplace add. This avoids:
+	// 1. SSH host key failures from non-interactive exec
+	// 2. Clone timeouts for large repos (ECC is ~16MB, takes 2+ min)
+	// The repo is already cloned by skill-tui to pluginsDir/<name>.
+	localPath := store.PluginDir(mp.Name)
 
 	// Build plugin name list
 	var pluginNames []string
@@ -1415,11 +1419,6 @@ func doInstallMarketplaceSync(store *plugin.Store, platList []platform.Platform,
 		pluginNames = []string{mp.Name}
 	}
 
-	platLookup := make(map[string]platform.Platform)
-	for _, pl := range platList {
-		platLookup[pl.Name] = pl
-	}
-
 	for _, platName := range targetPlatforms {
 		installType := platform.PluginInstallClass(platName)
 		if installType == platform.PluginInstallUnsupported {
@@ -1429,7 +1428,7 @@ func doInstallMarketplaceSync(store *plugin.Store, platList []platform.Platform,
 		// Use native CLI for platforms that support it (claude, copilot, hermes)
 		cli := platform.PlatformCLI(platName)
 		if cli != "" {
-			if err := platform.InstallMarketplaceViaCLI(platName, repoRef, mp.Name, pluginNames); err != nil {
+			if err := platform.InstallMarketplaceViaCLI(platName, localPath, mp.Name, pluginNames); err != nil {
 				return fmt.Errorf("installing to %s via CLI: %w", platName, err)
 			}
 			continue
@@ -1439,26 +1438,6 @@ func doInstallMarketplaceSync(store *plugin.Store, platList []platform.Platform,
 	}
 
 	return nil
-}
-
-func getGitCommitSha(dir string) string {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// repoURLToRef converts a full GitHub URL to owner/repo format.
-// e.g. "https://github.com/HKUDS/CLI-Anything" → "HKUDS/CLI-Anything"
-func repoURLToRef(url string) string {
-	url = strings.TrimSuffix(url, "/")
-	url = strings.TrimSuffix(url, ".git")
-	parts := strings.Split(url, "/")
-	if len(parts) >= 2 {
-		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
-	}
-	return url
 }
 
 func (m *AppModel) uninstallPlatformLinks(name string) {
@@ -1543,7 +1522,7 @@ func (m AppModel) handlePluginAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pluginCloning = true
 		store := m.pluginStore
 		return m, func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 			defer cancel()
 			mp, err := store.AddByRepo(ctx, repo)
 			return marketplaceClonedMsg{marketplace: mp, err: err}
